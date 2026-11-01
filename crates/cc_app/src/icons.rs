@@ -9,6 +9,15 @@ use egui::{Color32, ColorImage, Context, Painter, Rect, TextureHandle, TextureOp
 use std::collections::HashMap;
 use std::sync::Arc;
 
+macro_rules! suite {
+    ($name:literal) => {
+        (
+            include_str!(concat!("../../../assets/icons/suite/", $name, "-light.svg")),
+            include_str!(concat!("../../../assets/icons/suite/", $name, "-dark.svg")),
+        )
+    };
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
     New,
@@ -144,11 +153,15 @@ pub enum Icon {
     Mass,
     PushPull,
     CadImport,
+    IfcImport,
+    PdfExport,
+    SvgExport,
+    Units,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub const ALL: [Icon; 133] = [
+    pub const ALL: [Icon; 137] = [
         Icon::New,
         Icon::Open,
         Icon::Save,
@@ -282,6 +295,10 @@ impl Icon {
         Icon::Mass,
         Icon::PushPull,
         Icon::CadImport,
+        Icon::IfcImport,
+        Icon::PdfExport,
+        Icon::SvgExport,
+        Icon::Units,
     ];
 
     /// The icon's SVG source.
@@ -420,7 +437,72 @@ impl Icon {
             Icon::CloseViews => include_str!("../../../assets/icons/ui/close-views.svg"),
             Icon::Mass => include_str!("../../../assets/icons/ui/mass.svg"),
             Icon::PushPull => include_str!("../../../assets/icons/ui/push-pull.svg"),
+            Icon::IfcImport => include_str!("../../../assets/icons/ui/open.svg"),
+            Icon::PdfExport | Icon::SvgExport => include_str!("../../../assets/icons/ui/export.svg"),
+            Icon::Units => include_str!("../../../assets/icons/ui/dimension.svg"),
         }
+    }
+
+    /// Full-color ribbon artwork supplied for light and dark themes.
+    fn suite_source(self, dark: bool) -> Option<&'static str> {
+        let (light, dark_source) = match self {
+            Icon::Wall => suite!("wall"),
+            Icon::Door => suite!("door"),
+            Icon::Window => suite!("window"),
+            Icon::Floor => suite!("floor"),
+            Icon::Stair => suite!("stair"),
+            Icon::Roof => suite!("roof"),
+            Icon::Room => suite!("room"),
+            Icon::Railing => suite!("railing"),
+            Icon::Select => suite!("select"),
+            Icon::Column => suite!("column"),
+            Icon::Beam => suite!("beam"),
+            Icon::Footing => suite!("footing"),
+            Icon::Rebar => suite!("rebar"),
+            Icon::Analytical => suite!("analytical"),
+            Icon::BeamsOnGrids => suite!("grid-beams"),
+            Icon::Pipe => suite!("pipe"),
+            Icon::PlumbingFixture => suite!("plumbing-fixture"),
+            Icon::Systems => suite!("duct"),
+            Icon::Outlet => suite!("outlet"),
+            Icon::Conduit => suite!("circuit"),
+            Icon::Sizing => suite!("sizing"),
+            Icon::Move => suite!("move"),
+            Icon::MirrorPick | Icon::MirrorDraw => suite!("mirror"),
+            Icon::Offset => suite!("offset"),
+            Icon::TrimCorner | Icon::TrimExtend => suite!("trim"),
+            Icon::Rotate => suite!("rotate"),
+            Icon::Measure => suite!("measure"),
+            Icon::Align => suite!("align"),
+            Icon::FloorPlan => suite!("floor-plan"),
+            Icon::Elevation => suite!("elevation"),
+            Icon::Section => suite!("section"),
+            Icon::Dimension | Icon::DimLinear => suite!("dimension"),
+            Icon::Text => suite!("text"),
+            Icon::StructureTags => suite!("room-tag"),
+            Icon::Schedule => suite!("schedule"),
+            Icon::View3D => suite!("view-3d"),
+            Icon::OverrideGraphics => suite!("shader"),
+            Icon::Visibility => suite!("visibility"),
+            Icon::Hide | Icon::Isolate => suite!("hide-isolate"),
+            Icon::ZoomFit => suite!("zoom-fit"),
+            Icon::New => suite!("new"),
+            Icon::Open => suite!("open"),
+            Icon::Save => suite!("save"),
+            Icon::IfcImport => suite!("ifc-import"),
+            Icon::CadImport => suite!("cad-import"),
+            Icon::PdfExport => suite!("pdf-export"),
+            Icon::SvgExport => suite!("svg-export"),
+            Icon::Settings => suite!("settings"),
+            Icon::ProjectInfo => suite!("project-info"),
+            Icon::Units => suite!("units"),
+            Icon::Levels => suite!("levels"),
+            Icon::Materials => suite!("global-materials"),
+            Icon::Phases => suite!("phases"),
+            Icon::MacroRecord | Icon::MacroRun => suite!("macro"),
+            _ => return None,
+        };
+        Some(if dark { dark_source } else { light })
     }
 }
 
@@ -437,6 +519,8 @@ type Textures = HashMap<(Icon, Layer, u32), Option<TextureHandle>>;
 enum Layer {
     Ink,
     Tint,
+    SuiteLight,
+    SuiteDark,
 }
 
 /// The SVG of one layer: the drawings are white with soft fills at 20%
@@ -452,6 +536,7 @@ fn layer_source(source: &str, layer: Layer) -> String {
             // Strokes are off above (soft fills inherit the root's); adding
             // `stroke` here would duplicate the attribute where a fill sets it.
             .replace('\u{1}', r##"fill="#fff""##),
+        Layer::SuiteLight | Layer::SuiteDark => source.to_string(),
     }
 }
 
@@ -474,6 +559,7 @@ pub enum Badge {
 pub struct Tones {
     pub ink: Color32,
     pub tint: Color32,
+    pub enabled: bool,
     /// Badge background; the badge glyph uses `badge_glyph`.
     pub badge: Color32,
     pub badge_glyph: Color32,
@@ -491,17 +577,19 @@ impl Tones {
         match (enabled, selected) {
             (false, _) => {
                 let faint = palette.text_faint;
-                Tones { ink: faint, tint: faint.gamma_multiply(0.35), badge: faint, badge_glyph: glyph }
+                Tones { ink: faint, tint: faint.gamma_multiply(0.35), enabled, badge: faint, badge_glyph: glyph }
             }
             (true, true) => Tones {
                 ink: palette.accent_text,
                 tint: palette.accent.gamma_multiply(0.45),
+                enabled,
                 badge: badge_color,
                 badge_glyph: glyph,
             },
             (true, false) => Tones {
                 ink: palette.icon_ink,
                 tint: palette.icon_tint.gamma_multiply(0.4),
+                enabled,
                 badge: badge_color,
                 badge_glyph: glyph,
             },
@@ -517,8 +605,14 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
 
 /// Paint `icon` in two tones, with an optional badge.
 pub fn paint_toned(painter: &Painter, rect: Rect, icon: Icon, tones: Tones, badge: Option<Badge>) {
-    paint_layer(painter, rect, icon, Layer::Tint, tones.tint);
-    paint_layer(painter, rect, icon, Layer::Ink, tones.ink);
+    if icon.suite_source(false).is_some() {
+        let layer = if crate::theme::palette(painter.ctx()).dark { Layer::SuiteDark } else { Layer::SuiteLight };
+        let color = if tones.enabled { Color32::WHITE } else { Color32::from_white_alpha(95) };
+        paint_layer(painter, rect, icon, layer, color);
+    } else {
+        paint_layer(painter, rect, icon, Layer::Tint, tones.tint);
+        paint_layer(painter, rect, icon, Layer::Ink, tones.ink);
+    }
     if let Some(badge) = badge {
         paint_badge(painter, rect, badge, tones);
     }
@@ -588,7 +682,11 @@ fn texture(ctx: &Context, icon: Icon, layer: Layer, px: u32) -> Option<Option<Te
 
 /// Render a layer of an icon's SVG into a `px` x `px` image (premultiplied alpha).
 fn rasterize(icon: Icon, layer: Layer, px: u32) -> Option<ColorImage> {
-    let source = layer_source(icon.source(), layer);
+    let source = match layer {
+        Layer::SuiteLight => icon.suite_source(false)?.to_string(),
+        Layer::SuiteDark => icon.suite_source(true)?.to_string(),
+        Layer::Ink | Layer::Tint => layer_source(icon.source(), layer),
+    };
     let tree = resvg::usvg::Tree::from_str(&source, &resvg::usvg::Options::default()).ok()?;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(px, px)?;
     let scale = px as f32 / tree.size().width().max(tree.size().height());
@@ -614,6 +712,56 @@ mod tests {
             });
             assert_eq!(edge.count(), 0, "{icon:?} touches the border");
         }
+    }
+
+    #[test]
+    fn every_suite_icon_rasterizes_in_both_themes() {
+        let mut count = 0;
+        for icon in Icon::ALL {
+            if icon.suite_source(false).is_none() {
+                continue;
+            }
+            count += 1;
+            for layer in [Layer::SuiteLight, Layer::SuiteDark] {
+                let image =
+                    rasterize(icon, layer, 32).unwrap_or_else(|| panic!("{icon:?} {layer:?} does not rasterize"));
+                assert!(image.pixels.iter().filter(|p| p.a() > 0).count() > 20, "{icon:?} {layer:?} is empty");
+            }
+        }
+        assert!(count >= 54, "the complete icon suite is not mapped");
+    }
+
+    /// `ICON_SUITE_SHEET=path.png cargo test -p cc_app suite_sheet` writes a
+    /// contact sheet with the light and dark variants side by side.
+    #[test]
+    fn suite_sheet() {
+        let Ok(path) = std::env::var("ICON_SUITE_SHEET") else { return };
+        let icons: Vec<_> = Icon::ALL.into_iter().filter(|icon| icon.suite_source(false).is_some()).collect();
+        let cols = 8usize;
+        let cell = (88usize, 50usize);
+        let (w, h) = (cols * cell.0, icons.len().div_ceil(cols) * cell.1);
+        let mut rgba = vec![255u8; w * h * 4];
+        for (index, icon) in icons.into_iter().enumerate() {
+            for (side, layer, bg) in [(0, Layer::SuiteLight, [255u8, 255, 255]), (1, Layer::SuiteDark, [15u8, 23, 42])]
+            {
+                let image = rasterize(icon, layer, 32).unwrap();
+                for (i, pixel) in image.pixels.iter().enumerate() {
+                    let x = (index % cols) * cell.0 + side * 40 + 4 + i % 32;
+                    let y = (index / cols) * cell.1 + 9 + i / 32;
+                    let out = (y * w + x) * 4;
+                    let alpha = pixel.a() as f32 / 255.0;
+                    for (channel, foreground) in [pixel.r(), pixel.g(), pixel.b()].into_iter().enumerate() {
+                        rgba[out + channel] = (foreground as f32 * alpha + bg[channel] as f32 * (1.0 - alpha)) as u8;
+                    }
+                    rgba[out + 3] = 255;
+                }
+            }
+        }
+        let file = std::fs::File::create(path).unwrap();
+        let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), w as u32, h as u32);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.write_header().unwrap().write_image_data(&rgba).unwrap();
     }
 
     /// Soft fills rasterize too, also when the filled path already sets its stroke.

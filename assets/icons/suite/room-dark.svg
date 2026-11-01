@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+<rect fill="#1e3a8a" fill-opacity="0.3" height="18" stroke="#60a5fa" stroke-dasharray="3 2" stroke-width="1.2" width="18" x="3" y="3"></rect>
+<line stroke="#1e40af" stroke-width="1" x1="7" x2="17" y1="7" y2="17"></line>
+<line stroke="#1e40af" stroke-width="1" x1="17" x2="7" y1="7" y2="17"></line>
+<text fill="#b8c4ff" font-family="monospace" font-size="6" font-weight="bold" text-anchor="middle" x="12" y="14">m²</text>
+</svg>

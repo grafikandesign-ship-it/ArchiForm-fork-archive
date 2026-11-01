@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+<polygon fill="#f0f9ff" points="12 3 20 7.5 20 16.5 12 21 4 16.5 4 7.5" stroke="#0284c7" stroke-width="1.5"></polygon>
+<line stroke="#0284c7" stroke-width="1.2" x1="12" x2="20" y1="12" y2="7.5"></line>
+<line stroke="#0284c7" stroke-width="1.2" x1="12" x2="4" y1="12" y2="7.5"></line>
+<line stroke="#0284c7" stroke-width="1.2" x1="12" x2="12" y1="12" y2="21"></line>
+<text fill="#0369a1" font-family="monospace" font-size="4.5" font-weight="bold" text-anchor="middle" x="12" y="10">IFC</text>
+</svg>
