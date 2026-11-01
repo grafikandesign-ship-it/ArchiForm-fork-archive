@@ -52,6 +52,8 @@ pub struct Dialogs {
     pub component_editor: Option<crate::component_editor::Editor>,
     /// Type name being edited by "Rename" in the type dialog.
     pub type_rename: Option<String>,
+    /// The rename field takes the focus on its next frame.
+    pub type_rename_focus: bool,
     /// The layer editor is expanded in the type dialog.
     pub type_layers_open: bool,
     /// Undo depth when the open data dialog started editing (see `dialog::session`).
@@ -77,6 +79,10 @@ pub struct Dialogs {
     pub templates: Option<crate::graphics_dialog::TemplateManager>,
     /// Phases, phase filters and phase graphics.
     pub phases: Option<crate::phases_dialog::PhasesDialog>,
+    /// The component library window.
+    pub library: Option<crate::library::Library>,
+    /// The Preferences window.
+    pub preferences: Option<crate::preferences::PreferencesDialog>,
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +110,8 @@ pub struct AppState {
     pub interaction: Interaction,
     /// Options of the transform tools.
     pub modify: crate::modify::ModifyOptions,
+    /// Continuous (chained) placement of aligned and linear dimensions.
+    pub dim_continuous: bool,
     /// Options of the truss tool.
     pub truss: crate::tools::TrussOptions,
     /// Options of the pipe, conduit and device tools.
@@ -119,13 +127,15 @@ pub struct AppState {
     pub reference_calibration: Option<ReferenceCalibration>,
     /// Views the dock should open (or focus) this frame.
     pub open_requests: Vec<ViewId>,
+    /// View tabs open (kept by the dock each frame).
+    pub open_tabs: usize,
+    /// Close every view tab but this one on the next frame.
+    pub close_others_than: Option<ViewId>,
     pub dialogs: Dialogs,
     pub ribbon_tab: RibbonTab,
     /// The ribbon shows only its tabs; clicking one shows its panel over the views (`ribbon_peek`).
     pub ribbon_collapsed: bool,
     pub ribbon_peek: bool,
-    /// The interface theme the user chose (light, dark or the system's).
-    pub theme: crate::theme::ThemeChoice,
     /// The open command palette.
     pub palette: Option<crate::palette::Palette>,
     /// Browser inline rename in progress.
@@ -144,6 +154,10 @@ pub struct AppState {
     pub wall_height: f64,
     /// Location line for new walls.
     pub wall_location_line: cc_core::LocationLine,
+    /// Plan layout for new stairs (shape, turn, landing, winders, radius).
+    pub stair_layout: cc_core::StairLayout,
+    /// Plan layout for new ramps (shape, turn, slope, landing, radius).
+    pub ramp_layout: cc_core::RampLayout,
     /// The wall tool draws arcs (start, end, then a point on the arc).
     pub wall_arc: bool,
     /// Level new walls rise to (`None`: unconnected, `wall_height` tall).
@@ -161,6 +175,8 @@ pub struct AppState {
     pub project_open: bool,
     /// Recently opened or saved projects, most recent first.
     pub recent: Vec<std::path::PathBuf>,
+    /// The app preferences (saved with eframe; see `preferences.rs`).
+    pub prefs: crate::preferences::Preferences,
     /// Update checks and the notice of a newer release.
     pub updates: crate::update::Updates,
     pub thumbnail_jobs: Vec<crate::thumbnails::Job>,
@@ -172,6 +188,8 @@ pub struct AppState {
     pub zoom_default: crate::canvas::ZoomCommand,
     /// Value field open over a view (dimension values).
     pub value_edit: Option<crate::dim_edit::ValueEdit>,
+    /// The component modeling environment, when open (it replaces the views).
+    pub component_env: Option<crate::component_env::Env>,
     /// Text editor open over a view (text notes).
     pub text_edit: Option<crate::text_tool::TextEditor>,
     /// Options of the text tools.
@@ -190,6 +208,7 @@ impl AppState {
             tool: Tool::Select,
             interaction: Interaction::default(),
             modify: Default::default(),
+            dim_continuous: false,
             truss: Default::default(),
             mep: Default::default(),
             active_view: None,
@@ -199,10 +218,11 @@ impl AppState {
             reference_textures: HashMap::new(),
             reference_calibration: None,
             open_requests: Vec::new(),
+            open_tabs: 0,
+            close_others_than: None,
             dialogs: Dialogs::default(),
             ribbon_tab: RibbonTab::default(),
             ribbon_collapsed: false,
-            theme: Default::default(),
             ribbon_peek: false,
             palette: None,
             rename: None,
@@ -213,6 +233,8 @@ impl AppState {
             typed: Default::default(),
             wall_height: 3.0,
             wall_location_line: Default::default(),
+            stair_layout: Default::default(),
+            ramp_layout: Default::default(),
             wall_arc: false,
             wall_top_level: None,
             quit_confirmed: false,
@@ -221,6 +243,7 @@ impl AppState {
             show_home: false,
             project_open: true,
             recent: Vec::new(),
+            prefs: Default::default(),
             updates: Default::default(),
             thumbnail_jobs: Vec::new(),
             requested_samples: Default::default(),
@@ -228,6 +251,7 @@ impl AppState {
             zoom_default: Default::default(),
             seen_selection: Default::default(),
             value_edit: None,
+            component_env: None,
             text_edit: None,
             text_options: Default::default(),
         }
@@ -242,11 +266,15 @@ impl AppState {
         let generation = self.generation + 1;
         let recent = std::mem::take(&mut self.recent);
         let updates = std::mem::take(&mut self.updates);
+        let prefs = std::mem::take(&mut self.prefs);
+        let ribbon_collapsed = self.ribbon_collapsed;
         let jobs = std::mem::take(&mut self.thumbnail_jobs);
         let requested = std::mem::take(&mut self.requested_samples);
         *self = Self::new(doc);
         self.recent = recent;
         self.updates = updates;
+        self.prefs = prefs;
+        self.ribbon_collapsed = ribbon_collapsed;
         self.thumbnail_jobs = jobs;
         self.requested_samples = requested;
         self.textures_to_free = textures;
@@ -321,7 +349,7 @@ impl AppState {
 
     /// A segment is being drawn with typed input (wall, move, copy, array).
     pub fn typing_segment(&self) -> bool {
-        matches!(self.tool, Tool::Wall { .. } | Tool::Move | Tool::Copy | Tool::Array)
+        matches!(self.tool, Tool::Wall { .. } | Tool::Move | Tool::Copy | Tool::Array | Tool::PushPull)
             && self.interaction.anchor.is_some()
     }
 
@@ -346,7 +374,7 @@ impl AppState {
                 let count = |k: &str| out[k].as_array().map_or(0, Vec::len);
                 let (deleted, pinned) = (count("deleted"), count("pinned_skipped"));
                 self.message = if deleted == 0 {
-                    crate::t!("msg-pinned-skipped", "count" => pinned)
+                    crate::t!("msg-pinned-not-deleted", "count" => pinned)
                 } else {
                     crate::t!("msg-deleted", "count" => deleted)
                 };

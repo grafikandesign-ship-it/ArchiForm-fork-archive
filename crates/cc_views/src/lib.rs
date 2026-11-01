@@ -5,10 +5,13 @@
 //! computes tables.
 
 mod annotate;
+pub mod cad;
+pub mod component_view;
 mod cut;
 mod diagram;
 mod drawing;
 pub mod export;
+pub mod fonts;
 pub mod format;
 pub mod graphics;
 pub mod hatch;
@@ -22,7 +25,8 @@ mod schedule;
 mod sheet;
 
 pub use annotate::{DimensionLayout, HIGHLIGHT_ONLY, dimension_layout};
-pub use drawing::{Anchor, Drawing2D, LineStyle, Pen, Prim, ResolvedPen, halftone};
+pub use component_view::{ComponentView, ComponentViewKind, component_view};
+pub use drawing::{Anchor, Drawing2D, LineStyle, Pen, Prim, ResolvedPen, TagHandle, halftone};
 pub use legend::legend;
 pub use plan::{DoorPlanSymbol, door_plan_symbol, is_structural, plan, plan_of, window_plan_lines};
 pub use projected::{Frame, axonometric, elevation, section};
@@ -74,9 +78,9 @@ pub fn generate_temporary(
                 fade(&mut d);
                 mep::services(&mut d, project, geom, *level, *cut_height, discipline, view.scale);
             }
-            annotate::plan_annotations(&mut d, project, geom, *level, ceiling, structural, view.scale);
+            annotate::plan_annotations(&mut d, project, geom, *level, ceiling, structural, view);
             if tags {
-                annotate::structure_tags(&mut d, project, geom, *level, view.scale);
+                annotate::structure_tags(&mut d, project, geom, *level, view.scale, &view.tag_offsets);
             }
             d
         }
@@ -94,7 +98,7 @@ pub fn generate_temporary(
         ViewKind::Schedule { .. } | ViewKind::Sheet { .. } => return None,
     };
     if view.level().is_some() {
-        let mut references = Drawing2D { fit_elements: d.fit_elements, ..Drawing2D::default() };
+        let mut references = Drawing2D::default();
         for reference in view.references.iter().filter(|r| r.visible) {
             if let ReferenceData::Lines { segments, native_width } = &reference.data {
                 let factor = reference.width / native_width;
@@ -109,12 +113,29 @@ pub fn generate_temporary(
             }
         }
         references.prims.append(&mut d.prims);
-        d = references;
+        d.prims = references.prims;
+    }
+    // Imported CAD drawings, under everything (not in 3D views or diagrams).
+    if hosts_cad(&view.kind) {
+        cad::underlays(&mut d, project, view.id, view.scale);
     }
     annotate::dimensions(&mut d, project, view.id, view.scale);
     notes::notes(&mut d, project, view.id, view.scale);
     graphics::apply(&mut d, &mut graphics::Resolver::new(project, geom, view, temporary), view.scale);
     Some(d)
+}
+
+/// Whether a view can hold imported CAD drawings: plans, ceiling plans,
+/// elevations, sections and legends (2D views with a drawing plane).
+pub fn hosts_cad(kind: &ViewKind) -> bool {
+    matches!(
+        kind,
+        ViewKind::FloorPlan { .. }
+            | ViewKind::CeilingPlan { .. }
+            | ViewKind::Elevation { .. }
+            | ViewKind::Section { .. }
+            | ViewKind::Legend { .. }
+    )
 }
 
 /// Draw everything so far faint: lines in the faint pen (dashes kept),

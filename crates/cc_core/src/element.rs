@@ -40,12 +40,17 @@ pub enum ElementKind {
     Column(Column),
     Beam(Beam),
     Stair(Stair),
+    Ramp(Ramp),
     Railing(Railing),
     Component(Component),
     Foundation(Foundation),
     Rebar(Rebar),
     Pipe(crate::MepSegment),
     Conduit(crate::MepSegment),
+    /// A DWG or DXF drawing placed in a 2D view (an underlay to trace over).
+    CadImport(Box<crate::cad::CadImport>),
+    /// A conceptual mass (massing studies).
+    Mass(crate::mass::Mass),
 }
 
 impl Element {
@@ -64,12 +69,26 @@ impl Element {
             ElementKind::Column(_) => Category::Column,
             ElementKind::Beam(_) => Category::Beam,
             ElementKind::Stair(_) => Category::Stair,
+            ElementKind::Ramp(_) => Category::Ramp,
             ElementKind::Railing(_) => Category::Railing,
             ElementKind::Component(_) => Category::Component,
             ElementKind::Foundation(_) => Category::Foundation,
             ElementKind::Rebar(_) => Category::Rebar,
             ElementKind::Pipe(_) => Category::Pipe,
             ElementKind::Conduit(_) => Category::Conduit,
+            ElementKind::CadImport(_) => Category::CadImport,
+            ElementKind::Mass(_) => Category::Mass,
+        }
+    }
+
+    /// The view that owns the element (dimensions, text notes and imported
+    /// drawings live in one view and go with it).
+    pub fn owner_view(&self) -> Option<ViewId> {
+        match &self.kind {
+            ElementKind::Dimension(d) => Some(d.view),
+            ElementKind::Text(t) => Some(t.view),
+            ElementKind::CadImport(c) => Some(c.view),
+            _ => None,
         }
     }
 
@@ -169,6 +188,7 @@ impl Element {
                 b.end += delta;
             }
             ElementKind::Stair(s) => s.start += delta,
+            ElementKind::Ramp(r) => r.start += delta,
             ElementKind::Railing(r) => r.path.iter_mut().for_each(|p| *p += delta),
             ElementKind::Component(c) => c.position += delta,
             ElementKind::Pipe(s) | ElementKind::Conduit(s) => {
@@ -176,6 +196,8 @@ impl Element {
                 s.end += delta;
             }
             ElementKind::Foundation(f) => f.shape.points_mut().into_iter().for_each(|p| *p += delta),
+            ElementKind::CadImport(c) => c.position += delta,
+            ElementKind::Mass(m) => m.outline.iter_mut().chain(m.top.iter_mut().flatten()).for_each(|p| *p += delta),
             // Placed by their hosts.
             ElementKind::Door(_) | ElementKind::Window(_) | ElementKind::Rebar(_) => {}
         }
@@ -605,6 +627,11 @@ pub enum DimensionKind {
     Radial,
     /// Diameter of the circle centered at `a` through `b`.
     Diameter,
+    /// Distance from the origin `a` to `b` measured along `dir` (a unit
+    /// vector), drawn as a running (ordinate) dimension: the dimensions of
+    /// a set share the origin and the line, and each shows its running
+    /// total from the origin.
+    Ordinate { dir: DVec2 },
 }
 
 impl Dimension {
@@ -615,7 +642,7 @@ impl Dimension {
     /// Direction the dimension measures along (linear kinds), if defined.
     pub fn direction(&self) -> Option<DVec2> {
         match self.kind {
-            DimensionKind::Linear { dir } => dir.try_normalize(),
+            DimensionKind::Linear { dir } | DimensionKind::Ordinate { dir } => dir.try_normalize(),
             DimensionKind::Aligned => (self.b - self.a).try_normalize(),
             _ => None,
         }
@@ -643,7 +670,9 @@ impl Dimension {
     pub fn value(&self) -> f64 {
         match self.kind {
             DimensionKind::Aligned => self.length(),
-            DimensionKind::Linear { dir } => (self.b - self.a).dot(dir.normalize_or_zero()).abs(),
+            DimensionKind::Linear { dir } | DimensionKind::Ordinate { dir } => {
+                (self.b - self.a).dot(dir.normalize_or_zero()).abs()
+            }
             DimensionKind::Angular { vertex, .. } => (self.a - vertex).angle_to(self.b - vertex).abs(),
             DimensionKind::Radial => self.length(),
             DimensionKind::Diameter => 2.0 * self.length(),
@@ -850,8 +879,8 @@ pub struct Rebar {
     pub cover: f64,
 }
 
-/// A straight stair run starting at `start` (bottom of the first riser,
-/// center of the width) going up along `direction_deg`.
+/// A stair starting at `start` (bottom of the first riser, center of the
+/// width) going up along `direction_deg`; `layout` gives its plan shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Stair {
     pub start: DVec2,
@@ -860,6 +889,22 @@ pub struct Stair {
     /// Height when `top` is unconnected.
     pub height: f64,
     pub top: WallTop,
+    #[serde(default)]
+    pub layout: crate::StairLayout,
+}
+
+/// A ramp starting at `start` (the middle of its foot) going up along
+/// `direction_deg`; `layout` gives its plan shape and slope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Ramp {
+    pub start: DVec2,
+    pub direction_deg: f64,
+    pub base_offset: f64,
+    /// Height when `top` is unconnected.
+    pub height: f64,
+    pub top: WallTop,
+    #[serde(default)]
+    pub layout: crate::RampLayout,
 }
 
 /// A railing along an open path.
@@ -867,6 +912,10 @@ pub struct Stair {
 pub struct Railing {
     pub path: Vec<DVec2>,
     pub base_offset: f64,
+    /// The stair side the railing follows: its path and rise come from the
+    /// stair (`path` keeps the last one, for when the stair is gone).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stair: Option<crate::StairRailing>,
 }
 
 impl Railing {

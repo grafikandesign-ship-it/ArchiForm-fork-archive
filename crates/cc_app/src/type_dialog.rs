@@ -59,6 +59,12 @@ pub fn show(ctx: &Context, state: &mut AppState) {
     // While renaming, Esc only cancels the rename.
     let renaming = state.dialogs.type_rename.is_some();
     let response = crate::dialog::DialogResponse { dismissed: response.dismissed && !renaming, ..response };
+    // OK keeps a name still being typed.
+    if response.clicked == Some(ok)
+        && let Some(name) = state.dialogs.type_rename.take()
+    {
+        rename(state, &ty, &name);
+    }
     if crate::dialogs::ok_cancel(state, &response, ok) {
         state.dialogs.type_editor = None;
         state.dialogs.type_rename = None;
@@ -81,16 +87,20 @@ fn header(ui: &mut Ui, state: &mut AppState, ty: &ElementType) {
         match state.dialogs.type_rename.take() {
             Some(mut name) => {
                 let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(field_w));
-                r.request_focus();
+                // Focus once: the user may then click another field, which
+                // confirms the name.
+                let starting = std::mem::take(&mut state.dialogs.type_rename_focus);
+                if starting {
+                    r.request_focus();
+                }
                 let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
                 let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
-                if (r.lost_focus() || enter) && !escape {
-                    let name = name.trim().to_string();
-                    if !name.is_empty() && name != ty.name {
-                        crate::engine_edit::element_type(state, tid, None, |t| t.name = name);
+                if !escape {
+                    if enter || (!starting && !r.has_focus()) {
+                        rename(state, ty, &name);
+                    } else {
+                        state.dialogs.type_rename = Some(name);
                     }
-                } else if !escape {
-                    state.dialogs.type_rename = Some(name);
                 }
             }
             None => {
@@ -115,6 +125,7 @@ fn header(ui: &mut Ui, state: &mut AppState, ty: &ElementType) {
             }
             if ui.add_sized([button_w, 24.0], egui::Button::new(t!("type-rename"))).clicked() {
                 state.dialogs.type_rename = Some(ty.name.clone());
+                state.dialogs.type_rename_focus = true;
             }
         });
         ui.end_row();
@@ -133,6 +144,15 @@ fn duplicate(state: &mut AppState, ty: &ElementType) {
     let Some(new_id) = crate::actions::run_command(state, command).and_then(|o| o["id"].as_u64()) else { return };
     state.dialogs.type_editor = Some(ElementTypeId(new_id));
     state.dialogs.type_rename = Some(name);
+    state.dialogs.type_rename_focus = true;
+}
+
+/// Give type `ty` the name typed in the rename field.
+fn rename(state: &mut AppState, ty: &ElementType, name: &str) {
+    let name = name.trim().to_string();
+    if !name.is_empty() && name != ty.name {
+        crate::engine_edit::element_type(state, ty.id, None, |t| t.name = name);
+    }
 }
 
 fn length_row(
@@ -159,13 +179,20 @@ fn component_parameters(ui: &mut Ui, state: &mut AppState, ty: &ElementType) {
     section(ui, "type-component", t!("section-component"), |ui| {
         readonly_row(ui, &t!("col-component"), component.clone());
         readonly_row(ui, &t!("col-component-kind"), tr(def.kind.key()));
-        let (edit, save) = row(ui, &t!("comp-definition"), |ui| {
+        let (edit, quick, save) = row(ui, &t!("comp-definition"), |ui| {
             ui.horizontal(|ui| {
-                (ui.button(t!("action-edit-component")).clicked(), ui.button(t!("action-save-component")).clicked())
+                (
+                    ui.button(t!("action-edit-component")).clicked(),
+                    ui.button(t!("action-quick-edit-component")).clicked(),
+                    ui.button(t!("action-save-component")).clicked(),
+                )
             })
             .inner
         });
         if edit {
+            crate::component_env::open(state, tid);
+        }
+        if quick {
             state.dialogs.component_editor = crate::component_editor::Editor::open(state, tid);
         }
         if save {
@@ -274,6 +301,7 @@ fn parameters(ui: &mut Ui, state: &mut AppState, ty: &ElementType) {
     | TypeData::Beam { material, .. }
     | TypeData::Foundation { material, .. }
     | TypeData::Stair { material, .. }
+    | TypeData::Ramp { material, .. }
     | TypeData::Pipe { material, .. }
     | TypeData::Conduit { material, .. }
     | TypeData::Railing { material, .. } = &ty.data
@@ -291,6 +319,7 @@ fn parameters(ui: &mut Ui, state: &mut AppState, ty: &ElementType) {
                     | TypeData::Beam { material, .. }
                     | TypeData::Foundation { material, .. }
                     | TypeData::Stair { material, .. }
+                    | TypeData::Ramp { material, .. }
                     | TypeData::Pipe { material, .. }
                     | TypeData::Conduit { material, .. }
                     | TypeData::Railing { material, .. } => *material = m,
@@ -300,11 +329,121 @@ fn parameters(ui: &mut Ui, state: &mut AppState, ty: &ElementType) {
         });
     }
 
+    if let TypeData::Roof { covering, framing, .. } = &ty.data {
+        section(ui, "type-roofing", t!("section-roofing"), |ui| roofing(ui, state, tid, *covering, framing));
+    }
+
     section(ui, "type-identity", t!("section-identity"), |ui| identity(ui, state, tid, &ty.info));
 
     section(ui, "type-ifc", t!("section-ifc"), |ui| {
         readonly_row(ui, &t!("prop-ifc-guid"), cc_ifc::guid::encode(ty.uid.0));
     });
+}
+
+/// A roof type's covering (from the catalog, with its least slope and
+/// weight) and framing: the system, material, and the members' sizes and
+/// spacings (rafters and battens only for timber).
+fn roofing(
+    ui: &mut Ui,
+    state: &mut AppState,
+    tid: ElementTypeId,
+    covering: Option<cc_core::roofing::TileKind>,
+    framing: &cc_core::roofing::RoofFraming,
+) {
+    use cc_core::roofing::{FramingSystem, MemberSize, RoofFraming, TileKind};
+    let set = |state: &mut AppState, field: &str, f: &dyn Fn(&mut Option<TileKind>, &mut RoofFraming)| {
+        update(state, tid, field, |t| {
+            if let TypeData::Roof { covering, framing, .. } = &mut t.data {
+                f(covering, framing);
+            }
+        });
+    };
+    let mut c = covering;
+    let name = |c: Option<TileKind>| c.map_or_else(|| t!("tile-none"), |k| tr(k.key()));
+    row(ui, &t!("prop-covering"), |ui| {
+        egui::ComboBox::from_id_salt(("covering", tid.0)).selected_text(name(c)).show_ui(ui, |ui| {
+            ui.selectable_value(&mut c, None, name(None));
+            for k in TileKind::ALL {
+                ui.selectable_value(&mut c, Some(k), name(Some(k)));
+            }
+        });
+    });
+    if c != covering {
+        // `type_set` brings the framing the covering usually lies on, if none was chosen.
+        set(state, "covering", &|cov, _| *cov = c);
+    }
+    if let Some(spec) = covering.map(TileKind::spec) {
+        readonly_row(ui, &t!("prop-min-slope"), format::slope(spec.min_slope));
+        readonly_row(ui, &t!("prop-covering-weight"), format!("{:.0} kg/m²", spec.weight));
+        if let Some(n) = spec.per_m2 {
+            readonly_row(ui, &t!("prop-tiles-per-m2"), format!("{n:.1}"));
+        }
+    }
+    let mut system = framing.system;
+    row(ui, &t!("prop-framing"), |ui| {
+        egui::ComboBox::from_id_salt(("framing", tid.0)).selected_text(tr(system.key())).show_ui(ui, |ui| {
+            for s in FramingSystem::ALL {
+                ui.selectable_value(&mut system, s, tr(s.key()));
+            }
+        });
+    });
+    if system != framing.system {
+        set(state, "framing", &|_, fr| fr.system = system);
+    }
+    if framing.system == FramingSystem::None {
+        return;
+    }
+    let mut m = framing.material.clone();
+    if row(ui, &t!("prop-material"), |ui| crate::dialogs::material_combo(ui, state, ("framing-mat", tid.0), &mut m)) {
+        set(state, "framing-mat", &|_, fr| fr.material = m.clone());
+    }
+    type Pick = fn(&mut RoofFraming) -> &mut MemberSize;
+    let timber = matches!(framing.system, FramingSystem::Timber | FramingSystem::TimberTrusses);
+    let trusses = framing.system == FramingSystem::TimberTrusses;
+    let mut members: Vec<(&str, Pick)> = Vec::new();
+    if trusses {
+        members.push(("prop-truss", |f| &mut f.truss));
+    }
+    members.push(("prop-purlin", |f| &mut f.purlin));
+    if timber {
+        members.push(("prop-rafter", |f| &mut f.rafter));
+        members.push(("prop-batten", |f| &mut f.batten));
+    }
+    for (label, pick) in members {
+        let size = *pick(&mut framing.clone());
+        for (axis, value) in [("w", size.width), ("h", size.height)] {
+            let caption = format!("{} ({})", tr(label), if axis == "w" { t!("col-width") } else { t!("col-height") });
+            length_row(ui, state, &caption, tid, &format!("{label}-{axis}"), value, |d, v| {
+                if let TypeData::Roof { framing, .. } = d {
+                    let s = pick(framing);
+                    if axis == "w" {
+                        s.width = v.max(0.005);
+                    } else {
+                        s.height = v.max(0.005);
+                    }
+                }
+            });
+        }
+    }
+    if trusses {
+        length_row(ui, state, &t!("prop-truss-spacing"), tid, "truss-sp", framing.truss_spacing, |d, v| {
+            if let TypeData::Roof { framing, .. } = d {
+                framing.truss_spacing = v.max(0.3);
+            }
+        });
+    }
+    length_row(ui, state, &t!("prop-purlin-spacing"), tid, "purlin-sp", framing.purlin_spacing, |d, v| {
+        if let TypeData::Roof { framing, .. } = d {
+            framing.purlin_spacing = v.max(0.1);
+        }
+    });
+    if timber {
+        length_row(ui, state, &t!("prop-rafter-spacing"), tid, "rafter-sp", framing.rafter_spacing, |d, v| {
+            if let TypeData::Roof { framing, .. } = d {
+                framing.rafter_spacing = v.max(0.1);
+            }
+        });
+    }
 }
 
 /// Text fields of the type information.
@@ -323,7 +462,9 @@ fn identity(ui: &mut Ui, state: &mut AppState, tid: ElementTypeId, info: &TypeIn
     ];
     for (label, field) in fields {
         let mut text = field(&mut info.clone()).clone();
-        let r = row(ui, &tr(label), |ui| ui.text_edit_singleline(&mut text));
+        let r = row(ui, &tr(label), |ui| {
+            crate::table::live_text(ui, ("type-info", tid, label), &mut text, |ui, t| ui.text_edit_singleline(t))
+        });
         if r.changed() {
             update(state, tid, label, |t| *field(&mut t.info) = text);
         }
@@ -345,7 +486,7 @@ fn layers_editor(ui: &mut Ui, state: &mut AppState, ty: &ElementType) {
     let layers = ty.layers().to_vec();
     let set_layers = |state: &mut AppState, field: &str, layers: Vec<Layer>| {
         update(state, tid, field, |t| match &mut t.data {
-            TypeData::Wall { layers: l, .. } | TypeData::Floor { layers: l } | TypeData::Roof { layers: l } => {
+            TypeData::Wall { layers: l, .. } | TypeData::Floor { layers: l } | TypeData::Roof { layers: l, .. } => {
                 *l = layers
             }
             _ => {}
@@ -430,7 +571,7 @@ fn layers_editor(ui: &mut Ui, state: &mut AppState, ty: &ElementType) {
     });
 }
 
-/// Section and layout parameters of columns, beams, stairs and railings.
+/// Section and layout parameters of columns, beams, stairs, ramps and railings.
 fn structure_parameters(ui: &mut Ui, state: &mut AppState, ty: &ElementType) {
     let tid = ty.id;
     match ty.data {
@@ -482,7 +623,7 @@ fn structure_parameters(ui: &mut Ui, state: &mut AppState, ty: &ElementType) {
                 });
             });
         }
-        TypeData::Stair { width, max_riser, tread, .. } => {
+        TypeData::Stair { width, max_riser, tread, build, rules, .. } => {
             crate::table::section(ui, "type-dimensions", t!("section-dimensions"), |ui| {
                 length_row(ui, state, &t!("col-width"), tid, "sw", width, |d, v| {
                     if let TypeData::Stair { width, .. } = d {
@@ -500,6 +641,34 @@ fn structure_parameters(ui: &mut Ui, state: &mut AppState, ty: &ElementType) {
                     }
                 });
             });
+            crate::table::section(ui, "type-stair-build", t!("section-stair-build"), |ui| {
+                let mut b = build;
+                let edited = crate::stair_ui::build_rows(ui, tid.0, &mut b);
+                if edited.changed {
+                    update(state, tid, "sb", |t| {
+                        if let TypeData::Stair { build, .. } = &mut t.data {
+                            *build = b;
+                        }
+                    });
+                }
+                if edited.done {
+                    state.session.doc.break_merge();
+                }
+            });
+            crate::table::section(ui, "type-stair-rules", t!("section-stair-rules"), |ui| {
+                let mut r = rules;
+                let edited = crate::stair_ui::rules_rows(ui, tid.0, &mut r, max_riser, tread);
+                if edited.changed {
+                    update(state, tid, "sq", |t| {
+                        if let TypeData::Stair { rules, .. } = &mut t.data {
+                            *rules = r;
+                        }
+                    });
+                }
+                if edited.done {
+                    state.session.doc.break_merge();
+                }
+            });
         }
         TypeData::Pipe { diameter, .. } | TypeData::Conduit { diameter, .. } => {
             crate::table::section(ui, "type-dimensions", t!("section-dimensions"), |ui| {
@@ -508,6 +677,34 @@ fn structure_parameters(ui: &mut Ui, state: &mut AppState, ty: &ElementType) {
                         *diameter = v.clamp(0.005, 2.0);
                     }
                 });
+            });
+        }
+        TypeData::Ramp { width, thickness, rules, .. } => {
+            crate::table::section(ui, "type-dimensions", t!("section-dimensions"), |ui| {
+                length_row(ui, state, &t!("col-width"), tid, "rw", width, |d, v| {
+                    if let TypeData::Ramp { width, .. } = d {
+                        *width = v.clamp(0.3, 50.0);
+                    }
+                });
+                length_row(ui, state, &t!("col-thickness"), tid, "rt", thickness, |d, v| {
+                    if let TypeData::Ramp { thickness, .. } = d {
+                        *thickness = v.clamp(0.01, 5.0);
+                    }
+                });
+            });
+            crate::table::section(ui, "type-ramp-rules", t!("section-ramp-rules"), |ui| {
+                let mut r = rules;
+                let edited = crate::stair_ui::ramp_rules_rows(ui, &mut r);
+                if edited.changed {
+                    update(state, tid, "rq", |t| {
+                        if let TypeData::Ramp { rules, .. } = &mut t.data {
+                            *rules = r;
+                        }
+                    });
+                }
+                if edited.done {
+                    state.session.doc.break_merge();
+                }
             });
         }
         TypeData::Railing { height, post_spacing, .. } => {

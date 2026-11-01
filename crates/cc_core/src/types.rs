@@ -25,10 +25,15 @@ pub enum Category {
     Pipe,
     /// Electrical conduits.
     Conduit,
+    Ramp,
+    /// Imported DWG/DXF drawings (underlays).
+    CadImport,
+    /// Conceptual masses (massing studies).
+    Mass,
 }
 
 impl Category {
-    pub const ALL: [Category; 19] = [
+    pub const ALL: [Category; 22] = [
         Category::Wall,
         Category::Door,
         Category::Window,
@@ -42,16 +47,19 @@ impl Category {
         Category::Pipe,
         Category::Conduit,
         Category::Stair,
+        Category::Ramp,
         Category::Railing,
         Category::Component,
         Category::Room,
         Category::Grid,
         Category::Dimension,
         Category::Text,
+        Category::CadImport,
+        Category::Mass,
     ];
 
     /// Categories with physical elements (shown in legends and 3D).
-    pub const MODEL: [Category; 15] = [
+    pub const MODEL: [Category; 16] = [
         Category::Wall,
         Category::Door,
         Category::Window,
@@ -65,12 +73,13 @@ impl Category {
         Category::Pipe,
         Category::Conduit,
         Category::Stair,
+        Category::Ramp,
         Category::Railing,
         Category::Component,
     ];
 
     /// Categories that can be listed in a schedule.
-    pub const SCHEDULABLE: [Category; 16] = [
+    pub const SCHEDULABLE: [Category; 18] = [
         Category::Wall,
         Category::Door,
         Category::Window,
@@ -84,9 +93,11 @@ impl Category {
         Category::Pipe,
         Category::Conduit,
         Category::Stair,
+        Category::Ramp,
         Category::Railing,
         Category::Component,
         Category::Room,
+        Category::Mass,
     ];
 
     pub fn is_model(self) -> bool {
@@ -109,12 +120,15 @@ impl Category {
             Category::Column => "category-column",
             Category::Beam => "category-beam",
             Category::Stair => "category-stair",
+            Category::Ramp => "category-ramp",
             Category::Railing => "category-railing",
             Category::Component => "category-component",
             Category::Foundation => "category-foundation",
             Category::Rebar => "category-rebar",
             Category::Pipe => "category-pipe",
             Category::Conduit => "category-conduit",
+            Category::CadImport => "category-cad-import",
+            Category::Mass => "category-mass",
         }
     }
 
@@ -242,6 +256,12 @@ pub enum TypeData {
     },
     Roof {
         layers: Vec<Layer>,
+        /// The tiles or sheets it is covered with.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        covering: Option<crate::roofing::TileKind>,
+        /// Purlins, rafters and battens under its sloped faces.
+        #[serde(default)]
+        framing: crate::roofing::RoofFraming,
     },
     /// Rooms have no type parameters yet; the type groups them in schedules.
     Room {},
@@ -295,12 +315,25 @@ pub enum TypeData {
         thickness: f64,
         material: String,
     },
-    /// Straight stair: risers at most `max_riser` high, treads `tread` deep.
+    /// Stair: risers at most `max_riser` high, treads `tread` deep (or from
+    /// Blondel's formula, see `rules`), built as `build` says.
     Stair {
         width: f64,
         max_riser: f64,
         tread: f64,
         material: String,
+        #[serde(default)]
+        build: crate::StairBuild,
+        #[serde(default)]
+        rules: crate::StairRules,
+    },
+    /// Ramp: a slab `thickness` thick, `width` wide, within `rules`.
+    Ramp {
+        width: f64,
+        thickness: f64,
+        material: String,
+        #[serde(default)]
+        rules: crate::RampRules,
     },
     /// Railing with a top rail at `height` and posts every `post_spacing`.
     Railing {
@@ -314,14 +347,24 @@ pub enum TypeData {
         component: String,
         def: crate::component::ComponentDef,
     },
+    /// Imported CAD drawings have no type parameters; the type names them.
+    CadImport {},
+    /// Conceptual masses, shown in `material`.
+    Mass {
+        material: String,
+    },
 }
 
 impl TypeData {
     /// Material names referenced by this type.
     pub fn materials(&self) -> Vec<&str> {
         match self {
-            TypeData::Wall { layers, .. } | TypeData::Floor { layers } | TypeData::Roof { layers } => {
+            TypeData::Wall { layers, .. } | TypeData::Floor { layers } => {
                 layers.iter().map(|l| l.material.as_str()).collect()
+            }
+            TypeData::Roof { layers, framing, .. } => {
+                let framed = (!framing.material.is_empty()).then_some(framing.material.as_str());
+                layers.iter().map(|l| l.material.as_str()).chain(framed).collect()
             }
             TypeData::Door { material, .. }
             | TypeData::Window { material, .. }
@@ -333,11 +376,15 @@ impl TypeData {
             | TypeData::Pipe { material, .. }
             | TypeData::Conduit { material, .. }
             | TypeData::Stair { material, .. }
-            | TypeData::Railing { material, .. } => vec![material.as_str()],
+            | TypeData::Ramp { material, .. }
+            | TypeData::Railing { material, .. }
+            | TypeData::Mass { material } => vec![material.as_str()],
             TypeData::Component { def, .. } => def.items.iter().map(|i| i.material.as_str()).collect(),
-            TypeData::Room {} | TypeData::Grid { .. } | TypeData::Dimension { .. } | TypeData::Text { .. } => {
-                Vec::new()
-            }
+            TypeData::Room {}
+            | TypeData::Grid { .. }
+            | TypeData::Dimension { .. }
+            | TypeData::Text { .. }
+            | TypeData::CadImport {} => Vec::new(),
         }
     }
 
@@ -345,7 +392,7 @@ impl TypeData {
     /// structure layer of layered types (else the thickest), or the main material.
     pub fn cut_material(&self) -> &str {
         match self {
-            TypeData::Wall { layers, .. } | TypeData::Floor { layers } | TypeData::Roof { layers } => layers
+            TypeData::Wall { layers, .. } | TypeData::Floor { layers } | TypeData::Roof { layers, .. } => layers
                 .iter()
                 .find(|l| l.function == LayerFunction::Structure)
                 .or_else(|| layers.iter().max_by(|a, b| a.thickness.total_cmp(&b.thickness)))
@@ -366,8 +413,12 @@ impl TypeData {
             }
         };
         match self {
-            TypeData::Wall { layers, .. } | TypeData::Floor { layers } | TypeData::Roof { layers } => {
+            TypeData::Wall { layers, .. } | TypeData::Floor { layers } => {
                 layers.iter_mut().for_each(|l| fix(&mut l.material))
+            }
+            TypeData::Roof { layers, framing, .. } => {
+                layers.iter_mut().for_each(|l| fix(&mut l.material));
+                fix(&mut framing.material);
             }
             TypeData::Door { material, .. }
             | TypeData::Window { material, .. }
@@ -379,9 +430,15 @@ impl TypeData {
             | TypeData::Pipe { material, .. }
             | TypeData::Conduit { material, .. }
             | TypeData::Stair { material, .. }
-            | TypeData::Railing { material, .. } => fix(material),
+            | TypeData::Ramp { material, .. }
+            | TypeData::Railing { material, .. }
+            | TypeData::Mass { material } => fix(material),
             TypeData::Component { def, .. } => def.items.iter_mut().for_each(|i| fix(&mut i.material)),
-            TypeData::Room {} | TypeData::Grid { .. } | TypeData::Dimension { .. } | TypeData::Text { .. } => {}
+            TypeData::Room {}
+            | TypeData::Grid { .. }
+            | TypeData::Dimension { .. }
+            | TypeData::Text { .. }
+            | TypeData::CadImport {} => {}
         }
     }
 }
@@ -500,7 +557,7 @@ pub struct ElementType {
 
 impl ElementType {
     pub fn category(&self) -> Category {
-        match self.data {
+        match &self.data {
             TypeData::Wall { .. } => Category::Wall,
             TypeData::Door { .. } => Category::Door,
             TypeData::Window { .. } => Category::Window,
@@ -518,14 +575,17 @@ impl ElementType {
             TypeData::Pipe { .. } => Category::Pipe,
             TypeData::Conduit { .. } => Category::Conduit,
             TypeData::Stair { .. } => Category::Stair,
+            TypeData::Ramp { .. } => Category::Ramp,
             TypeData::Railing { .. } => Category::Railing,
-            TypeData::Component { .. } => Category::Component,
+            TypeData::Component { def, .. } => def.category(),
+            TypeData::CadImport {} => Category::CadImport,
+            TypeData::Mass { .. } => Category::Mass,
         }
     }
 
     pub fn layers(&self) -> &[Layer] {
         match &self.data {
-            TypeData::Wall { layers, .. } | TypeData::Floor { layers } | TypeData::Roof { layers } => layers,
+            TypeData::Wall { layers, .. } | TypeData::Floor { layers } | TypeData::Roof { layers, .. } => layers,
             _ => &[],
         }
     }
@@ -589,9 +649,19 @@ impl ElementType {
 
     /// Width/height of an opening type (doors, windows).
     pub fn opening_size(&self) -> Option<(f64, f64)> {
-        match self.data {
-            TypeData::Door { width, height, .. } | TypeData::Window { width, height, .. } => Some((width, height)),
+        match &self.data {
+            TypeData::Door { width, height, .. } | TypeData::Window { width, height, .. } => Some((*width, *height)),
+            TypeData::Component { def, .. } => def.opening_size(),
             _ => None,
+        }
+    }
+
+    /// Sill height of new elements of a door or window type.
+    pub fn default_sill(&self) -> f64 {
+        match &self.data {
+            TypeData::Window { default_sill, .. } => *default_sill,
+            TypeData::Component { def, .. } => def.default_sill(),
+            _ => 0.0,
         }
     }
 
@@ -602,10 +672,14 @@ impl ElementType {
             TypeData::Door { material, .. }
             | TypeData::Window { material, .. }
             | TypeData::Ceiling { material, .. } => material,
-            TypeData::Wall { layers, .. } | TypeData::Roof { layers } => {
+            TypeData::Wall { layers, .. } | TypeData::Roof { layers, .. } => {
                 layers.first().map_or("", |l| l.material.as_str())
             }
-            TypeData::Room {} | TypeData::Grid { .. } | TypeData::Dimension { .. } | TypeData::Text { .. } => "",
+            TypeData::Room {}
+            | TypeData::Grid { .. }
+            | TypeData::Dimension { .. }
+            | TypeData::Text { .. }
+            | TypeData::CadImport {} => "",
             TypeData::Column { material, .. }
             | TypeData::Beam { material, .. }
             | TypeData::Foundation { material, .. }
@@ -613,7 +687,9 @@ impl ElementType {
             | TypeData::Pipe { material, .. }
             | TypeData::Conduit { material, .. }
             | TypeData::Stair { material, .. }
-            | TypeData::Railing { material, .. } => material,
+            | TypeData::Ramp { material, .. }
+            | TypeData::Railing { material, .. }
+            | TypeData::Mass { material } => material,
             TypeData::Component { def, .. } => def.main_material(),
             TypeData::Floor { .. } => self
                 .layers()

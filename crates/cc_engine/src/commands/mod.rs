@@ -3,6 +3,9 @@
 
 pub mod analytical;
 pub mod annotate;
+pub mod cad;
+pub mod component;
+pub mod component_piece;
 pub mod create;
 pub mod edit;
 pub mod foundation;
@@ -11,14 +14,18 @@ pub mod graphics;
 pub mod io;
 pub mod layers;
 pub mod levels;
+pub mod mass;
 pub mod materials;
 pub mod mep;
 pub mod modify;
 pub mod phases;
 pub mod project;
 pub mod query;
+pub mod ramp;
 pub mod rebar;
 pub mod reference;
+pub mod roofing;
+pub mod stair;
 pub mod structure;
 pub mod types;
 pub mod views;

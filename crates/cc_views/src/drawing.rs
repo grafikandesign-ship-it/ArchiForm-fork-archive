@@ -150,6 +150,28 @@ pub struct Drawing2D {
     /// Fit the view to the geometry of elements only (plans: the markers of
     /// elevations and sections stand outside the model).
     pub fit_elements: bool,
+    /// Elements drawn as background (imported CAD drawings): picked only
+    /// where nothing else is.
+    pub background: std::collections::BTreeSet<ElementId>,
+    /// Tags that can be dragged: where each is and how far it was moved.
+    pub tags: Vec<TagHandle>,
+}
+
+/// A tag of an element in a view, as drawn: picked within `half` of
+/// `center`; `offset` is how far the view moved it from its default spot.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TagHandle {
+    pub element: ElementId,
+    pub center: DVec2,
+    pub half: DVec2,
+    pub offset: DVec2,
+}
+
+impl Drawing2D {
+    /// The tag at `p` (the last drawn on top), if any.
+    pub fn tag_at(&self, p: DVec2) -> Option<TagHandle> {
+        self.tags.iter().rev().find(|t| (p - t.center).abs().cmple(t.half).all()).copied()
+    }
 }
 
 impl Drawing2D {
@@ -242,12 +264,38 @@ impl Drawing2D {
         }
     }
 
-    /// Topmost element under `p` within `tol` (view units).
+    /// Topmost element under `p` within `tol` (view units). Background
+    /// elements (imported drawings) are picked only where nothing else is.
     pub fn hit_test(&self, p: DVec2, tol: f64) -> Option<ElementId> {
+        self.hit_test_tier(p, tol, false).or_else(|| self.hit_test_tier(p, tol, true))
+    }
+
+    /// The element whose line passes within `tol` of `p` (the nearest),
+    /// leaving out fills and background elements: what a drag starting at
+    /// `p` grabs.
+    pub fn hit_test_line(&self, p: DVec2, tol: f64) -> Option<ElementId> {
+        let mut best: Option<(f64, ElementId)> = None;
+        for prim in &self.prims {
+            if let Prim::Line { a, b, element: Some(id), .. } = prim
+                && !self.background.contains(id)
+            {
+                let d = cc_geom::polygon::closest_on_segment(*a, *b, p).0.distance(p);
+                if d <= tol && best.is_none_or(|(bd, _)| d < bd) {
+                    best = Some((d, *id));
+                }
+            }
+        }
+        best.map(|(_, id)| id)
+    }
+
+    fn hit_test_tier(&self, p: DVec2, tol: f64, background: bool) -> Option<ElementId> {
+        let tier = |id: &ElementId| self.background.contains(id) == background;
         // Lines first: they are thin and drawn over fills.
         let mut best: Option<(f64, ElementId)> = None;
         for prim in &self.prims {
-            if let Prim::Line { a, b, element: Some(id), .. } = prim {
+            if let Prim::Line { a, b, element: Some(id), .. } = prim
+                && tier(id)
+            {
                 let (q, _) = cc_geom::polygon::closest_on_segment(*a, *b, p);
                 let d = q.distance(p);
                 if d <= tol && best.is_none_or(|(bd, _)| d < bd) {
@@ -260,29 +308,139 @@ impl Drawing2D {
         }
         self.prims.iter().rev().find_map(|prim| match prim {
             // Fully transparent fills only show selection (room areas); they are not picked.
-            Prim::Fill { pts, element: Some(id), color, .. } if color[3] > 0 && cc_geom::polygon::contains(pts, p) => {
+            Prim::Fill { pts, element: Some(id), color, .. }
+                if color[3] > 0 && tier(id) && cc_geom::polygon::contains(pts, p) =>
+            {
                 Some(*id)
             }
             _ => None,
         })
     }
 
-    /// Elements with any geometry inside the rectangle `lo`..`hi`.
+    /// Elements taken by the rectangle `lo`..`hi`: with `fully` (a window)
+    /// those whose lines, fills and texts all lie inside it, otherwise (a
+    /// crossing) those that any of them reaches into: a line crossing it, a
+    /// fill overlapping it, a text anchored in it. A crossing leaves out
+    /// background elements (imported drawings), which lie under everything.
     pub fn elements_in(&self, lo: DVec2, hi: DVec2, fully: bool) -> Vec<ElementId> {
+        use cc_geom::polygon::{contains, segment_meets_rect};
         use std::collections::BTreeMap;
+        let (lo, hi) = (lo.min(hi), lo.max(hi));
         let inside = |p: &DVec2| p.x >= lo.x && p.y >= lo.y && p.x <= hi.x && p.y <= hi.y;
-        // Track (any point inside, all points inside) per element.
+        let center = (lo + hi) * 0.5;
+        // Per element: (reaches in, lies wholly inside).
         let mut state: BTreeMap<ElementId, (bool, bool)> = BTreeMap::new();
         for prim in &self.prims {
-            let (pts, id): (Vec<DVec2>, _) = match prim {
-                Prim::Line { a, b, element: Some(id), .. } => (vec![*a, *b], *id),
-                Prim::Fill { pts, element: Some(id), .. } => (pts.clone(), *id),
+            let (id, reaches, within) = match prim {
+                Prim::Line { a, b, element: Some(id), .. } => {
+                    (*id, segment_meets_rect(*a, *b, lo, hi), inside(a) && inside(b))
+                }
+                Prim::Fill { pts, color, element: Some(id), .. } => {
+                    let edges = pts.iter().zip(pts.iter().cycle().skip(1));
+                    let crosses = edges.take(pts.len()).any(|(a, b)| segment_meets_rect(*a, *b, lo, hi));
+                    // A fill around the whole rectangle, unless it only shows
+                    // when selected (room areas): dragging inside a room
+                    // would otherwise always take it.
+                    let around = color[3] > 0 && pts.len() >= 3 && contains(pts, center);
+                    (*id, crosses || around || pts.iter().any(inside), !pts.is_empty() && pts.iter().all(inside))
+                }
+                Prim::Text { pos, element: Some(id), .. } => (*id, inside(pos), inside(pos)),
                 _ => continue,
             };
             let s = state.entry(id).or_insert((false, true));
-            s.0 |= pts.iter().any(inside);
-            s.1 &= pts.iter().all(inside);
+            s.0 |= reaches;
+            s.1 &= within;
         }
-        state.into_iter().filter(|(_, (any, all))| if fully { *all } else { *any }).map(|(id, _)| id).collect()
+        state
+            .into_iter()
+            .filter(|(id, (any, all))| if fully { *all } else { *any && !self.background.contains(id) })
+            .map(|(id, _)| id)
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v(x: f64, y: f64) -> DVec2 {
+        DVec2::new(x, y)
+    }
+
+    /// A long wall line, a floor fill, a room area (transparent fill), a
+    /// text note and an imported drawing's line.
+    fn sample() -> Drawing2D {
+        let mut d = Drawing2D::default();
+        d.line(v(0.0, 0.0), v(10.0, 0.0), LineStyle::Cut, Some(ElementId(1)));
+        let square = vec![v(20.0, 0.0), v(30.0, 0.0), v(30.0, 10.0), v(20.0, 10.0)];
+        d.fill(square.clone(), [200, 200, 200, 255], Some(ElementId(2)));
+        d.fill(square.iter().map(|p| *p + v(20.0, 0.0)).collect(), [0, 0, 0, 0], Some(ElementId(3)));
+        d.prims.push(Prim::Text {
+            pos: v(5.0, 5.0),
+            text: "Nota".into(),
+            size: 2.5,
+            anchor: Anchor::LeftBottom,
+            angle: 0.0,
+            element: Some(ElementId(4)),
+        });
+        d.line(v(-50.0, -50.0), v(100.0, 50.0), LineStyle::Thin, Some(ElementId(5)));
+        d.background.insert(ElementId(5));
+        d
+    }
+
+    fn ids(list: Vec<ElementId>) -> Vec<u64> {
+        list.into_iter().map(|e| e.0).collect()
+    }
+
+    /// Issue #93: a crossing that cuts a line between its ends, or lies
+    /// inside a floor, takes the element; it used to look at ends only.
+    #[test]
+    fn a_crossing_takes_what_it_cuts_or_lies_in() {
+        let d = sample();
+        // Across the middle of the wall line, no end inside.
+        assert_eq!(ids(d.elements_in(v(4.0, -1.0), v(6.0, 1.0), false)), [1]);
+        // Inside the floor, touching none of its edges.
+        assert_eq!(ids(d.elements_in(v(24.0, 4.0), v(26.0, 6.0), false)), [2]);
+        // Inside a room area: rooms show only when selected, so not taken.
+        assert!(d.elements_in(v(44.0, 4.0), v(46.0, 6.0), false).is_empty());
+        // Around a text note's anchor.
+        assert_eq!(ids(d.elements_in(v(4.0, 4.0), v(6.0, 6.0), false)), [4]);
+        // The imported drawing's line passes through all of these, but a crossing leaves it out.
+        assert!(!ids(d.elements_in(v(-60.0, -60.0), v(110.0, 60.0), false)).contains(&5));
+    }
+
+    #[test]
+    fn a_window_takes_only_what_lies_wholly_inside() {
+        let d = sample();
+        assert!(d.elements_in(v(4.0, -1.0), v(6.0, 1.0), true).is_empty());
+        assert_eq!(ids(d.elements_in(v(-1.0, -1.0), v(11.0, 6.0), true)), [1, 4]);
+        // A window around everything takes the imported drawing too.
+        assert_eq!(ids(d.elements_in(v(-60.0, -60.0), v(110.0, 60.0), true)), [1, 2, 3, 4, 5]);
+    }
+
+    /// A drag grabs an element by its lines only, never by a fill or an imported drawing.
+    #[test]
+    fn drags_grab_lines() {
+        let d = sample();
+        assert_eq!(d.hit_test_line(v(5.0, 0.05), 0.1), Some(ElementId(1)));
+        assert_eq!(d.hit_test_line(v(25.0, 5.0), 0.1), None, "inside the floor");
+        assert_eq!(d.hit_test(v(25.0, 5.0), 0.1), Some(ElementId(2)), "a click still picks it");
+        assert_eq!(d.hit_test_line(v(25.0, 12.5), 0.1), None, "on the imported line");
+    }
+
+    /// Tags are picked within their box, the last drawn first.
+    #[test]
+    fn tags_are_picked_in_their_box() {
+        let mut d = Drawing2D::default();
+        let tag = |id: u64, x: f64| TagHandle {
+            element: ElementId(id),
+            center: v(x, 0.0),
+            half: v(1.0, 0.5),
+            offset: DVec2::ZERO,
+        };
+        d.tags = vec![tag(1, 0.0), tag(2, 1.5)];
+        assert_eq!(d.tag_at(v(-0.9, 0.4)).map(|t| t.element.0), Some(1));
+        assert_eq!(d.tag_at(v(0.8, 0.0)).map(|t| t.element.0), Some(2), "both boxes: the one on top");
+        assert_eq!(d.tag_at(v(0.0, 0.6)), None);
     }
 }

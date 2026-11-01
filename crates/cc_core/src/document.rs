@@ -230,12 +230,18 @@ impl<'a> EditCtx<'a> {
                 continue;
             }
             pending.extend(self.project.hosted_by(id).map(|e| e.id));
+            pending.extend(self.project.railings_of(id).map(|e| e.id));
             pending.extend(self.project.rebar_of(id).map(|(e, _)| e.id));
             self.touch_element(id);
             self.project.elements.remove(&id);
             if self.project.element_layers.contains_key(&id) {
                 self.touch_settings();
                 self.project.element_layers.remove(&id);
+            }
+            // A pinned element removed with its host or view takes its pin along.
+            if self.project.pinned.contains(&id) {
+                self.touch_settings();
+                self.project.pinned.remove(&id);
             }
             if self.project.joined_with(id).next().is_some() {
                 self.touch_settings();
@@ -283,8 +289,14 @@ impl<'a> EditCtx<'a> {
         self.project.views.get_mut(&id)
     }
 
-    /// Remove a view and any sheet viewports showing it.
+    /// Remove a view, the elements it owns (dimensions, text notes,
+    /// imported drawings) and any sheet viewports showing it.
     pub fn remove_view(&mut self, id: ViewId) {
+        let owned: Vec<ElementId> =
+            self.project.elements.values().filter(|e| e.owner_view() == Some(id)).map(|e| e.id).collect();
+        for e in owned {
+            self.remove_element(e);
+        }
         let sheets: Vec<_> = self
             .project
             .views
@@ -479,7 +491,7 @@ impl<'a> EditCtx<'a> {
         let changed: Vec<(ViewId, View)> = p
             .views
             .values()
-            .filter(|v| v.template.is_some() || !v.graphics.is_empty())
+            .filter(|v| v.template.is_some() || !v.graphics.is_empty() || !v.tag_offsets.is_empty())
             .filter_map(|v| {
                 let mut new = v.clone();
                 match new.template.map(|t| p.templates.get(&t)) {
@@ -488,6 +500,8 @@ impl<'a> EditCtx<'a> {
                     None => {}
                 }
                 new.graphics.repair(&p.filters, Some(&|id| p.elements.contains_key(&id)));
+                // Tags of deleted elements go.
+                new.tag_offsets.retain(|id, o| p.elements.contains_key(id) && o.is_finite());
                 (new != *v).then_some((v.id, new))
             })
             .collect();
@@ -603,6 +617,8 @@ pub struct Document {
     redo: Vec<Transaction>,
     revision: u64,
     saved_revision: u64,
+    /// A view state change (see [`Document::set_view_state`]) since saving.
+    view_state_changed: bool,
     /// Merge key of the last recorded transaction, for coalescing.
     last_merge_key: Option<u64>,
     /// The phase new elements are built in (the active view's; `None`:
@@ -620,15 +636,19 @@ impl Document {
             redo: Vec::new(),
             revision: 1,
             saved_revision: 1,
+            view_state_changed: false,
             last_merge_key: None,
             creation_phase: None,
         }
     }
 
-    /// Apply a change that is not undoable (e.g. saving a 3D camera position).
-    pub fn set_untracked(&mut self, f: impl FnOnce(&mut Project)) {
+    /// Apply a change that is saved but not undoable, and that no derived
+    /// geometry depends on (a 3D view's camera). The revision stays, so caches
+    /// keyed on it stay valid: callers drop what does depend on the change
+    /// (see `Session::set_view_camera`).
+    pub fn set_view_state(&mut self, f: impl FnOnce(&mut Project)) {
         f(&mut self.project);
-        self.revision += 1;
+        self.view_state_changed = true;
     }
 
     /// Monotonic counter bumped on every model change; use it to invalidate caches.
@@ -637,11 +657,18 @@ impl Document {
     }
 
     pub fn is_dirty(&self) -> bool {
-        self.revision != self.saved_revision
+        self.revision != self.saved_revision || self.view_state_changed
     }
 
     pub fn mark_saved(&mut self) {
         self.saved_revision = self.revision;
+        self.view_state_changed = false;
+    }
+
+    /// Treat the project as not saved (one restored from a recovery copy,
+    /// whose changes never reached its file).
+    pub fn mark_unsaved(&mut self) {
+        self.saved_revision = 0;
     }
 
     /// Run `f` as one undoable transaction named `name`.

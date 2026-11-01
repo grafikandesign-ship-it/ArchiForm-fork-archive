@@ -246,16 +246,17 @@ pub const TEMPLATE_PHASES: [&str; 2] = ["tpl-phase-existing", "tpl-phase-new"];
 impl Category {
     /// Whether elements of the category belong to phases (annotations do not).
     pub fn is_phased(self) -> bool {
-        !matches!(self, Category::Dimension | Category::Text | Category::Grid)
+        !matches!(self, Category::Dimension | Category::Text | Category::Grid | Category::CadImport)
     }
 }
 
 /// The element that decides an element's phases: the wall of a door or
-/// window, the beam or column of a rebar set.
+/// window, the beam or column of a rebar set, the stair of a railing.
 pub fn phase_host(e: &Element) -> Option<ElementId> {
     match &e.kind {
         ElementKind::Door(h) | ElementKind::Window(h) => Some(h.host),
         ElementKind::Rebar(r) => Some(r.host),
+        ElementKind::Railing(r) => r.stair.map(|h| h.host),
         _ => None,
     }
 }

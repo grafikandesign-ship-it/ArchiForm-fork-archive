@@ -60,7 +60,9 @@ fn wall_preset_menu_adds_and_activates_an_interior_type() {
     let mut harness = themed_harness(state, egui::vec2(1500.0, 180.0), egui::Theme::Light, crate::ribbon::options_bar);
     harness.get_by_label(&t!("wall-presets-menu")).click();
     harness.run();
-    harness.get_by_label(&t!("wall-preset-interior-masonry-12")).click();
+    harness.get_by_label_contains(&t!("wall-presets-interior")).click();
+    harness.run();
+    harness.get_by_label_contains(&t!("wall-preset-interior-masonry-12")).click();
     harness.run();
     let type_id = harness.state().tool.type_id().unwrap();
     let ty = harness.state().project().element_type(type_id).unwrap();
@@ -244,6 +246,7 @@ fn presentation_buttons_expand_in_wide_windows_and_stack_when_narrow() {
         DimensionMode::Angular,
         DimensionMode::Radial,
         DimensionMode::Diameter,
+        DimensionMode::Ordinate,
     ]
     .map(|mode| UiCommand::Dimension(mode).label(wide.state()));
     let dimension_rects = dimension_labels.map(|label| ribbon_button(&wide, &label));
@@ -252,7 +255,7 @@ fn presentation_buttons_expand_in_wide_windows_and_stack_when_narrow() {
 
     let mut state = sample_state();
     state.ribbon_tab = RibbonTab::Presentation;
-    let mut medium = ribbon_harness(state, 1600.0);
+    let mut medium = ribbon_harness(state, 1900.0);
     for _ in 0..5 {
         medium.run();
     }
@@ -382,6 +385,21 @@ fn ribbon_buttons_are_accessible() {
             found.insert(label);
         }
     }
+    // The component environment shows its own ribbon.
+    let mut state = sample_state();
+    let table = state
+        .project()
+        .types_of(cc_core::Category::Component)
+        .find(|t| matches!(&t.data, cc_core::TypeData::Component { .. }))
+        .map(|t| t.id)
+        .unwrap();
+    crate::component_env::open(&mut state, table);
+    let harness = themed_harness(state, egui::vec2(1600.0, 140.0), egui::Theme::Light, |ui, state| {
+        crate::component_env::ribbon(ui, state)
+    });
+    for node in harness.query_all_by_role(Role::Button) {
+        found.insert(node.accesskit_node().label().unwrap_or_default());
+    }
     let state = sample_state();
     let hidden = [UiCommand::CommandPalette, UiCommand::ToggleRibbon];
     for command in UiCommand::all().into_iter().filter(|c| !hidden.contains(c)) {
@@ -405,6 +423,49 @@ fn wall_tool_has_an_arc_mode() {
     harness.get_by_label(&t!("wall-mode-line")).click();
     harness.run();
     assert!(!harness.state().wall_arc);
+}
+
+/// Aligned and linear dimensions are placed singly or in a continuous chain.
+#[test]
+fn dimension_tool_has_a_continuous_mode() {
+    use crate::tools::{DimChain, DimensionMode, Tool};
+    let mut state = sample_state();
+    let type_id = state.project().default_type(cc_core::Category::Dimension).unwrap();
+    state.tool = Tool::Dimension { type_id, mode: DimensionMode::Linear };
+    let mut harness = themed_harness(state, egui::vec2(1600.0, 60.0), egui::Theme::Light, |ui, state| {
+        crate::ribbon::options_bar(ui, state)
+    });
+    assert!(!harness.state().dim_continuous);
+    harness.get_by_label(&t!("dim-continuous")).click();
+    harness.run();
+    assert!(harness.state().dim_continuous);
+    // A chain in progress shows how to continue and end it.
+    let view = cc_core::ViewId(1);
+    let chain = DimChain {
+        view,
+        last: glam::DVec2::ZERO,
+        dir: glam::DVec2::X,
+        line: glam::DVec2::Y,
+        linear: true,
+        ordinate: false,
+    };
+    harness.state_mut().interaction.dim_chain = Some(chain);
+    harness.run();
+    assert!(harness.query_by_label(&t!("hint-dim-chain")).is_some());
+    harness.get_by_label(&t!("dim-single")).click();
+    harness.run();
+    assert!(!harness.state().dim_continuous);
+    // Ordinate dimensions always continue from their origin.
+    harness.state_mut().tool = Tool::Dimension { type_id, mode: DimensionMode::Ordinate };
+    harness.state_mut().interaction.dim_chain = Some(DimChain { ordinate: true, ..chain });
+    harness.run();
+    assert!(harness.query_by_label(&t!("dim-continuous")).is_none());
+    assert!(harness.query_by_label(&t!("hint-dim-ordinate-next")).is_some());
+    // Angular dimensions have no chain.
+    harness.state_mut().interaction.dim_chain = None;
+    harness.state_mut().tool = Tool::Dimension { type_id, mode: DimensionMode::Angular };
+    harness.run();
+    assert!(harness.query_by_label(&t!("dim-continuous")).is_none());
 }
 
 /// A roof gets an opening (a courtyard) sketched inside it; one outside is refused.
@@ -694,4 +755,555 @@ fn phases_dialog_snapshots() {
         results.add(harness.try_snapshot(name));
     }
     results.unwrap();
+}
+
+fn type_dialog_harness(state: AppState) -> Harness<'static, AppState> {
+    themed_harness(state, egui::vec2(900.0, 900.0), egui::Theme::Light, |ui, state| {
+        crate::type_dialog::show(ui.ctx(), state)
+    })
+}
+
+/// Duplicate a window type, type a name and press OK: the copy keeps the
+/// typed name (before, OK dropped a rename that Enter had not confirmed).
+#[test]
+fn duplicated_type_keeps_the_typed_name() {
+    let mut state = sample_state();
+    let window = state.project().default_type(cc_core::Category::Window).unwrap();
+    state.dialogs.type_editor = Some(window);
+    let mut harness = type_dialog_harness(state);
+    harness.get_by_label(&t!("type-duplicate")).click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.query_all_by_role(Role::TextInput).find(|n| n.is_focused()).unwrap().type_text("Janela 2.5 x 1.8");
+    harness.run();
+    harness.get_by_label(&t!("action-ok")).click();
+    harness.run();
+    let names: Vec<_> = harness.state().project().types_of(cc_core::Category::Window).map(|t| t.name.clone()).collect();
+    assert!(names.iter().any(|n| n == "Janela 2.5 x 1.8"), "{names:?}");
+    assert!(harness.state().dialogs.type_editor.is_none());
+}
+
+/// Typing a name and moving on to another field confirms the name.
+#[test]
+fn type_name_is_kept_when_another_field_is_clicked() {
+    let mut state = sample_state();
+    let window = state.project().default_type(cc_core::Category::Window).unwrap();
+    state.dialogs.type_editor = Some(window);
+    let mut harness = type_dialog_harness(state);
+    harness.get_by_label(&t!("type-rename")).click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.query_all_by_role(Role::TextInput).find(|n| n.is_focused()).unwrap().type_text("Janela alta");
+    harness.run();
+    harness.query_all_by_role(Role::TextInput).find(|n| !n.is_focused()).unwrap().click();
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().project().element_type(window).unwrap().name, "Janela alta");
+    assert!(harness.state().dialogs.type_rename.is_none());
+}
+
+/// The component library lists a folder's component files and loads the
+/// one picked into the project.
+#[test]
+fn component_library_loads_a_component() {
+    let mut state = sample_state();
+    let dir = std::env::temp_dir().join(format!("ccad-library-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let door = state
+        .project()
+        .component_types()
+        .find(|t| t.category() == cc_core::Category::Door)
+        .and_then(|t| match &t.data {
+            cc_core::TypeData::Component { component, .. } => Some(component.clone()),
+            _ => None,
+        })
+        .unwrap();
+    let path = dir.join("porta.ccomp");
+    state.session.run(cc_engine::commands::io::ComponentSave { component: door.clone(), path: path.clone() }).unwrap();
+    state.prefs.library_folders = vec![dir];
+    crate::library::open(&mut state);
+    assert_eq!(state.dialogs.library.as_ref().unwrap().entries.len(), 1);
+    let before = state.project().types.len();
+    let mut harness = themed_harness(state, egui::vec2(1500.0, 900.0), egui::Theme::Light, |ui, state| {
+        crate::library::show(ui.ctx(), state)
+    });
+    let item_label = format!("{door}  ·  ");
+    harness.get_by_label_contains(&item_label).click();
+    harness.run();
+    assert!(harness.state().dialogs.library.as_ref().is_some_and(|lib| lib.selected.is_some()));
+    harness.get_by_label(&t!("lib-load")).click();
+    harness.run();
+    assert!(harness.state().dialogs.library.is_none());
+    assert!(harness.state().project().types.len() > before, "the door's types joined the project");
+    assert!(matches!(harness.state().tool, crate::tools::Tool::Hosted { .. }), "doors are placed in walls");
+}
+
+/// The ribbon, the app's shortcuts and the dialogs (Preferences among them).
+fn app_harness(state: AppState) -> Harness<'static, AppState> {
+    themed_harness(state, egui::vec2(1200.0, 760.0), egui::Theme::Light, |ui, state| {
+        crate::app::shortcuts(ui.ctx(), state);
+        crate::ribbon::ribbon(ui, state);
+        crate::dialogs::show(ui.ctx(), state);
+    })
+}
+
+fn click_dialog_cancel(harness: &mut Harness<'static, AppState>) {
+    let label = t!("action-cancel");
+    harness
+        .query_all_by_role(Role::Button)
+        .rfind(|node| node.accesskit_node().label().as_deref() == Some(label.as_str()))
+        .unwrap()
+        .click();
+}
+
+/// Preferences opens from the File tab and with Ctrl+,.
+#[test]
+fn preferences_open_from_the_file_tab_and_the_shortcut() {
+    let mut state = sample_state();
+    state.ribbon_tab = RibbonTab::File;
+    let mut harness = app_harness(state);
+    harness.get_by_role_and_label(Role::Button, &t!("action-preferences")).click();
+    harness.run();
+    assert!(harness.state().dialogs.preferences.is_some(), "the File tab button opens it");
+    assert!(harness.query_by_label(&t!("pref-file-locations")).is_some(), "its sections are listed");
+    click_dialog_cancel(&mut harness);
+    harness.run();
+    assert!(harness.state().dialogs.preferences.is_none());
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
+    harness.run();
+    assert!(harness.state().dialogs.preferences.is_some(), "Ctrl+, opens it");
+}
+
+/// Changes show at once; Cancel brings back the values the window opened
+/// with, and OK keeps them.
+#[test]
+fn preferences_cancel_restores_and_ok_keeps() {
+    let mut state = sample_state();
+    crate::preferences::open(&mut state, crate::preferences::Section::Interface);
+    let mut harness = app_harness(state);
+    let tooltips = t!("pref-detailed-tooltips");
+    let ribbon = t!("pref-ribbon-collapsed");
+    harness.get_by_role_and_label(Role::CheckBox, &tooltips).click();
+    harness.get_by_role_and_label(Role::CheckBox, &ribbon).click();
+    harness.run();
+    assert!(!harness.state().prefs.detailed_tooltips);
+    assert!(harness.state().prefs.ribbon_collapsed);
+    assert!(harness.state().ribbon_collapsed, "the ribbon collapses at once");
+    click_dialog_cancel(&mut harness);
+    harness.run();
+    assert!(harness.state().dialogs.preferences.is_none());
+    assert!(harness.state().prefs.detailed_tooltips, "Cancel restores");
+    assert!(!harness.state().prefs.ribbon_collapsed && !harness.state().ribbon_collapsed);
+    // Again, with OK.
+    crate::preferences::open(harness.state_mut(), crate::preferences::Section::Interface);
+    harness.run();
+    harness.get_by_role_and_label(Role::CheckBox, &tooltips).click();
+    harness.run();
+    harness.get_by_label(&t!("action-ok")).click();
+    harness.run();
+    assert!(harness.state().dialogs.preferences.is_none());
+    assert!(!harness.state().prefs.detailed_tooltips, "OK keeps");
+}
+
+/// The library window's Manage Folders opens Preferences on the file
+/// locations, where the folder list now lives.
+#[test]
+fn library_manages_folders_in_preferences() {
+    let mut state = sample_state();
+    state.prefs.library_folders = vec![std::path::PathBuf::from("/no/such/library/ccad")];
+    crate::library::open(&mut state);
+    let mut harness = app_harness(state);
+    harness.get_by_label(&t!("lib-manage-folders")).click();
+    harness.run();
+    let dialog = harness.state().dialogs.preferences.as_ref().map(|d| d.section);
+    assert_eq!(dialog, Some(crate::preferences::Section::FileLocations));
+    let remove = format!("{} {}", t!("action-remove"), std::path::Path::new("/no/such/library/ccad").display());
+    harness.get_by_label(&remove).click();
+    harness.run();
+    assert!(harness.state().prefs.library_folders.is_empty());
+    harness.get_by_label(&t!("action-ok")).click();
+    harness.run();
+    assert!(harness.state().dialogs.library.is_some(), "the library stays open");
+    assert!(harness.state().prefs.library_folders.is_empty());
+}
+
+/// Shortcuts: typing two letters gives a command new keys, and Default
+/// brings the old ones back.
+#[test]
+fn preferences_change_shortcuts() {
+    let mut state = sample_state();
+    crate::preferences::open(&mut state, crate::preferences::Section::Shortcuts);
+    let mut harness = app_harness(state);
+    let label = crate::commands::UiCommand::Demolish.label(harness.state());
+    harness.run();
+    // The search field has the focus; one command is left.
+    harness.query_all_by_role(Role::TextInput).find(|n| n.is_focused()).unwrap().type_text(&label);
+    harness.run();
+    harness.query_all_by_role(Role::TextInput).find(|n| n.value().as_deref() == Some("DE")).unwrap().click();
+    harness.run();
+    harness.query_all_by_role(Role::TextInput).find(|n| n.is_focused()).unwrap().type_text("QZ");
+    harness.run();
+    assert_eq!(harness.state().prefs.shortcut_keys.get("Demolish").map(String::as_str), Some("QZ"));
+    harness.get_by_label(&format!("{} {label}", t!("pref-shortcut-reset"))).click();
+    harness.run();
+    assert!(harness.state().prefs.shortcut_keys.is_empty(), "Default restores the keys");
+    harness.get_by_label(&t!("action-ok")).click();
+    harness.run();
+    crate::commands::set_key_overrides(&Default::default());
+}
+
+#[test]
+fn preferences_snapshots() {
+    if !snapshots_requested() {
+        return;
+    }
+    let mut results = egui_kittest::SnapshotResults::new();
+    for section in crate::preferences::Section::ALL {
+        let mut state = sample_state();
+        state.prefs.library_folders = vec![std::path::PathBuf::from("/no/such/library/ccad")];
+        crate::preferences::open(&mut state, section);
+        let mut harness = themed_harness(state, egui::vec2(940.0, 600.0), egui::Theme::Light, |ui, state| {
+            crate::preferences::show(ui.ctx(), state)
+        });
+        harness.run();
+        results.add(harness.try_snapshot(format!("preferences_{section:?}").to_lowercase()));
+    }
+    results.unwrap();
+}
+
+/// Run Macro is a menu of the macros in the macros folder, plus Browse….
+#[test]
+fn macro_menu_lists_the_macros_folder() {
+    let dir = std::env::temp_dir().join(format!("ccad-macro-menu-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("walls.ccmacro"), "").unwrap();
+    std::fs::write(dir.join("doors.ccmacro"), "").unwrap();
+    std::fs::write(dir.join("notes.txt"), "").unwrap();
+    let mut state = sample_state();
+    state.ribbon_tab = RibbonTab::Manage;
+    state.prefs.macro_folder = Some(dir.clone());
+    let mut harness = ribbon_harness_sized(state, egui::vec2(1100.0, 400.0));
+    harness.get_by_role_and_label(Role::Button, &t!("action-macro-run")).click();
+    harness.run();
+    assert!(harness.query_by_label("walls").is_some());
+    assert!(harness.query_by_label("doors").is_some());
+    assert!(harness.query_by_label("notes").is_none(), "only macro files");
+    assert!(harness.query_by_label(&t!("pref-browse")).is_some());
+    let _ = std::fs::remove_dir_all(&dir);
+    // Without a folder: a hint and Browse….
+    let mut state = sample_state();
+    state.ribbon_tab = RibbonTab::Manage;
+    let mut harness = ribbon_harness_sized(state, egui::vec2(1100.0, 400.0));
+    harness.get_by_role_and_label(Role::Button, &t!("action-macro-run")).click();
+    harness.run();
+    assert!(harness.query_by_label(&t!("macro-no-folder")).is_some());
+    assert!(harness.query_by_label(&t!("pref-browse")).is_some());
+}
+
+/// The component editor on the sample house's window (a door or window: the
+/// opening row shows) and on a new component.
+#[test]
+fn component_editor_snapshots() {
+    if !snapshots_requested() {
+        return;
+    }
+    let mut results = egui_kittest::SnapshotResults::new();
+    let mut state = sample_state();
+    let window = state.project().component_types().find(|t| t.category() == cc_core::Category::Window).unwrap().id;
+    state.dialogs.component_editor = crate::component_editor::Editor::open(&state, window);
+    let mut harness = themed_harness(state, egui::vec2(1280.0, 900.0), egui::Theme::Light, |ui, state| {
+        crate::component_editor::show(ui.ctx(), state)
+    });
+    for _ in 0..4 {
+        harness.run();
+    }
+    results.add(harness.try_snapshot("component_editor"));
+    let mut state = sample_state();
+    state.dialogs.component_editor = Some(crate::component_editor::Editor::new_component());
+    let mut harness = themed_harness(state, egui::vec2(1280.0, 900.0), egui::Theme::Light, |ui, state| {
+        crate::component_editor::show(ui.ctx(), state)
+    });
+    for _ in 0..4 {
+        harness.run();
+    }
+    results.add(harness.try_snapshot("component_editor_new"));
+    results.unwrap();
+}
+
+/// The structure tab's automation, the way its buttons run it, with the
+/// panels and every 2D view drawn after each step and the 3D mesh rebuilt
+/// (issue #51: a crash while placing columns, beams, footings and slabs).
+#[test]
+fn structure_automation_redraws_panels_and_views() {
+    let mut state = sample_state();
+    for (a, b) in [([-1.0, 0.0], [12.0, 0.0]), ([-1.0, 6.0], [12.0, 6.0]), ([0.0, -1.0], [0.0, 8.0])] {
+        state.session.execute("grid_create", serde_json::json!({"start": a, "end": b})).unwrap();
+    }
+    state.session.execute("grid_create", serde_json::json!({"start": [10.0, -1.0], "end": [10.0, 8.0]})).unwrap();
+    state.session.execute("view_create", serde_json::json!({"kind": "structural_plan"})).unwrap();
+    let mut harness = themed_harness(state, egui::vec2(1400.0, 900.0), egui::Theme::Light, |ui, state| {
+        state.sync();
+        state.follow_selection();
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.set_width(300.0);
+                crate::browser::show(ui, state);
+                crate::properties::show(ui, state);
+            });
+            if let Some(view) = state.active_view
+                && state.project().view(view).is_some_and(|v| !matches!(v.kind, cc_core::ViewKind::ThreeD { .. }))
+            {
+                crate::canvas::show(ui, state, view);
+            }
+        });
+    });
+    let steps: [fn(&mut AppState); 9] = [
+        crate::actions::columns_at_grids,
+        crate::actions::beams_on_grids,
+        crate::actions::footings_under_columns,
+        crate::actions::strip_footings_under_walls,
+        |s| drop(s.session.execute("floor_create", serde_json::json!({"from_walls": true}))),
+        |s| drop(s.session.execute("foundation_slab_create", serde_json::json!({"from_walls": true}))),
+        crate::actions::slab_join_supports,
+        crate::actions::number_structure,
+        crate::actions::beams_between_columns,
+    ];
+    let views: Vec<cc_core::ViewId> = harness.state().project().views.keys().copied().collect();
+    for round in 0..2 {
+        for step in steps {
+            step(harness.state_mut());
+            for &view in &views {
+                harness.state_mut().active_view = Some(view);
+                harness.run();
+            }
+            let state = harness.state_mut();
+            let selection = state.selection.clone();
+            let tess = cc_render::Tessellation::new(state.session.geometry());
+            cc_render::SceneMesh::build_plain(&tess, &selection);
+        }
+        if round == 0 {
+            // Undo all of it, then redo, as Ctrl+Z / Ctrl+Y would.
+            while harness.state_mut().session.execute("undo", serde_json::json!({})).is_ok() {
+                harness.run();
+            }
+            while harness.state_mut().session.execute("redo", serde_json::json!({})).is_ok() {
+                harness.run();
+            }
+        }
+    }
+}
+
+/// Renaming a view in the project browser ends with Enter or a click
+/// elsewhere (issue #82: the field kept the focus for good, so the name
+/// never changed and no other field took typing).
+#[test]
+fn renaming_a_view_in_the_browser_ends() {
+    let mut state = sample_state();
+    let original = state.project().views_of(cc_core::ViewCategory::ThreeD).next().map(|v| v.id).unwrap();
+    let out = state.session.execute("view_duplicate", serde_json::json!({"view": original.0})).unwrap();
+    let copy = cc_core::ViewId(out["id"].as_u64().unwrap());
+    state.rename = Some((copy, String::new()));
+    let mut harness = themed_harness(state, egui::vec2(400.0, 900.0), egui::Theme::Light, |ui, state| {
+        egui::ScrollArea::vertical().show(ui, |ui| crate::browser::show(ui, state));
+    });
+    harness.run();
+    harness.query_all_by_role(Role::TextInput).find(|n| n.is_focused()).unwrap().type_text("Perspectiva");
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert!(harness.state().rename.is_none(), "Enter ends the rename");
+    assert_eq!(harness.state().project().view(copy).map(|v| v.name.as_str()), Some("Perspectiva"));
+
+    // A click on another row ends it too and keeps the name.
+    harness.state_mut().rename = Some((copy, "Vista externa".into()));
+    harness.run();
+    let other = harness.state().project().view(original).map(|v| v.name.clone()).unwrap();
+    harness.get_by_label(&other).click();
+    harness.run();
+    harness.run();
+    assert!(harness.state().rename.is_none(), "a click elsewhere ends the rename");
+    assert_eq!(harness.state().project().view(copy).map(|v| v.name.as_str()), Some("Vista externa"));
+}
+
+/// Typed one key per frame, as people type, a name keeps its spaces and
+/// can be emptied and typed again, though the command trims the name and
+/// refuses an empty one at every key (issue #82: fields went back to the
+/// model's value under the cursor).
+#[test]
+fn names_typed_key_by_key_keep_spaces_and_survive_emptying() {
+    let mut state = sample_state();
+    state.dialogs.levels = true;
+    let (level, old) = state.project().levels.last().map(|l| (l.id, l.name.clone())).unwrap();
+    let mut harness = app_harness(state);
+    harness.run();
+    harness.query_all_by_role(Role::TextInput).find(|n| n.value().as_deref() == Some(old.as_str())).unwrap().click();
+    harness.run();
+    for _ in 0..old.chars().count() {
+        harness.key_press(egui::Key::End);
+        harness.key_press(egui::Key::Backspace);
+        harness.run();
+    }
+    for ch in "Piso 2 B".chars() {
+        harness.query_all_by_role(Role::TextInput).find(|n| n.is_focused()).unwrap().type_text(&ch.to_string());
+        harness.run();
+    }
+    assert_eq!(harness.state().project().level_name(level), "Piso 2 B");
+}
+
+/// A view placed on a sheet shows its own properties when picked on the
+/// sheet, so its scale or graphics change there (#90).
+#[test]
+fn a_view_picked_on_a_sheet_shows_its_properties() {
+    let mut state = sample_state();
+    let sheet = state
+        .project()
+        .views
+        .values()
+        .find_map(|v| match &v.kind {
+            cc_core::ViewKind::Sheet { viewports, .. } => viewports.first().map(|_| v.id),
+            _ => None,
+        })
+        .expect("the sample has a sheet with a view");
+    state.active_view = Some(sheet);
+    state.sheet_selection = Some((sheet, 0));
+    let mut harness = themed_harness(state, egui::vec2(360.0, 1400.0), egui::Theme::Light, |ui, state| {
+        crate::properties::show(ui, state);
+    });
+    harness.run();
+    assert!(harness.query_by_label(&t!("section-position")).is_some(), "the viewport's position");
+    assert!(harness.query_by_label(&t!("section-graphics")).is_some(), "and the view's own graphics");
+}
+
+/// The home screen in both themes, the Open button under the pointer: the
+/// sidebar buttons take the theme's colors (they stayed white in the dark
+/// theme, their light text unreadable).
+#[test]
+fn home_snapshots() {
+    if !snapshots_requested() {
+        return;
+    }
+    let mut results = egui_kittest::SnapshotResults::new();
+    for (theme, name) in [(egui::Theme::Light, "home_light"), (egui::Theme::Dark, "home_dark")] {
+        let mut state = sample_state();
+        state.show_home = true;
+        let mut harness = themed_harness(state, egui::vec2(900.0, 500.0), theme, |ui, state| {
+            crate::home::show(ui, state);
+        });
+        harness.run();
+        let label = t!("action-open");
+        harness.get_by_label(&label).hover();
+        harness.run();
+        results.add(harness.try_snapshot(name));
+    }
+    results.unwrap();
+}
+
+/// Update Now's dialog: a failed update offers the download; an installer
+/// ready to run is kept for when the app closes, "On Exit" or not.
+#[test]
+fn update_install_dialog_offers_what_is_left_to_do() {
+    use crate::update::{Install, Version};
+    let mut state = sample_state();
+    let version = Version { major: 9, minor: 0, patch: 0 };
+    state.updates.install = Some(Install::Failed("checksum".into(), "https://example.com/r".into()));
+    let mut harness = app_harness(state);
+    harness.run();
+    assert!(harness.query_by_label(&t!("update-download")).is_some());
+    harness.query_all_by_label(&t!("action-close")).last().unwrap().click();
+    harness.run();
+    assert!(harness.state().updates.install.is_none());
+
+    let msi = std::path::PathBuf::from("C:/Temp/constructcad-v9.0.0-x86_64.msi");
+    let next = crate::update_install::Next::Installer(msi);
+    harness.state_mut().updates.install = Some(Install::Ready(version, next.clone()));
+    harness.run();
+    harness.get_by_label(&t!("update-install-on-exit")).click();
+    harness.run();
+    assert!(harness.state().updates.install.is_none());
+    assert_eq!(harness.state().updates.on_exit, Some(next), "the installer runs when the app closes");
+    assert!(!harness.state().quit_confirmed, "On Exit does not close the app");
+}
+
+/// A mass's properties list a box per level it spans with that floor's area;
+/// clearing one takes the mass floor away (#31).
+#[test]
+fn mass_floors_are_chosen_in_the_properties() {
+    let mut state = sample_state();
+    let out = state
+        .session
+        .execute("mass_create", serde_json::json!({"outline": [[0, 0], [10, 0], [10, 6], [0, 6]], "height": 5.5}))
+        .unwrap();
+    let mass = cc_core::ElementId(out["id"].as_u64().unwrap());
+    state.selection = [mass].into_iter().collect();
+    let ground = state.project().levels[0].name.clone();
+    let mut harness = themed_harness(state, egui::vec2(360.0, 1400.0), egui::Theme::Light, |ui, state| {
+        crate::properties::show(ui, state);
+    });
+    harness.run();
+    assert!(harness.query_by_label(&t!("section-mass-floors")).is_some());
+    let floors = |h: &Harness<'_, AppState>| match &h.state().project().element(mass).unwrap().kind {
+        cc_core::ElementKind::Mass(m) => m.floors.len(),
+        _ => 0,
+    };
+    let before = floors(&harness);
+    assert!(before >= 1, "the mass spans the ground level at least");
+    harness.get_by_role_and_label(Role::CheckBox, &ground).click();
+    harness.run();
+    assert_eq!(floors(&harness), before - 1);
+}
+
+/// Walls, floors and roofs from masses need a mass selected, and select
+/// what they make (#31).
+#[test]
+fn walls_floors_and_roofs_come_from_selected_masses() {
+    use crate::commands::UiCommand;
+    let mut state = sample_state();
+    assert!(UiCommand::MassWalls.unavailable(&state).is_some(), "no mass selected");
+    let out = state
+        .session
+        .execute("mass_create", serde_json::json!({"outline": [[40, 0], [50, 0], [50, 6], [40, 6]], "height": 3.0}))
+        .unwrap();
+    let mass = cc_core::ElementId(out["id"].as_u64().unwrap());
+    state.selection = [mass].into_iter().collect();
+    assert_eq!(UiCommand::MassWalls.unavailable(&state), None);
+    let ctx = egui::Context::default();
+    crate::commands::run(&mut state, &ctx, UiCommand::MassWalls);
+    assert_eq!(state.selection.len(), 4, "the four walls are selected");
+    assert!(
+        state
+            .selection
+            .iter()
+            .all(|id| state.project().element(*id).is_some_and(|e| e.category() == cc_core::Category::Wall))
+    );
+    state.selection = [mass].into_iter().collect();
+    crate::commands::run(&mut state, &ctx, UiCommand::MassRoof);
+    assert!(
+        state
+            .selection
+            .iter()
+            .all(|id| state.project().element(*id).is_some_and(|e| e.category() == cc_core::Category::Roof))
+    );
+}
+
+/// A roof type's dialog has the covering and framing; with tiles and timber
+/// framing, a roof's properties show them.
+#[test]
+fn roof_types_take_tiles_and_framing() {
+    let mut state = sample_state();
+    let roof_type = state.project().default_type(cc_core::Category::Roof).unwrap();
+    state.dialogs.type_editor = Some(roof_type);
+    let mut harness = app_harness(state);
+    harness.run();
+    assert!(harness.query_by_label(&t!("section-roofing")).is_some());
+
+    let mut state = sample_state();
+    let params = serde_json::json!({"covering": "CeramicColonial", "framing": {"system": "Timber"}});
+    state.session.execute("type_set", serde_json::json!({"type": roof_type.0, "params": params})).unwrap();
+    let roof = state.project().elements.values().find(|e| e.type_id == roof_type).map(|e| e.id).unwrap();
+    state.selection = [roof].into_iter().collect();
+    let mut harness = themed_harness(state, egui::vec2(360.0, 1800.0), egui::Theme::Light, |ui, state| {
+        crate::properties::show(ui, state);
+    });
+    harness.run();
+    assert!(harness.query_by_label(&t!("section-roofing")).is_some(), "the roof shows its covering and framing");
 }

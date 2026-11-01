@@ -125,6 +125,12 @@ impl Command for LevelDelete {
             return Err(EngineError::rejected("the last level cannot be deleted"));
         }
         let views: Vec<_> = p.views.values().filter(|v| v.level() == Some(level)).map(|v| v.id).collect();
+        let masses: Vec<_> = p
+            .elements
+            .values()
+            .filter(|e| matches!(&e.kind, ElementKind::Mass(m) if m.floors.contains(&level)))
+            .map(|e| e.id)
+            .collect();
         let attached: Vec<_> = p
             .elements
             .values()
@@ -138,6 +144,9 @@ impl Command for LevelDelete {
                 ElementKind::Stair(st) if matches!(st.top, WallTop::Level { level: l, .. } if l == level) => {
                     Some((e.id, p.stair_span(e, st).1 - p.stair_span(e, st).0))
                 }
+                ElementKind::Ramp(r) if matches!(r.top, WallTop::Level { level: l, .. } if l == level) => {
+                    Some((e.id, p.ramp_span(e, r).1 - p.ramp_span(e, r).0))
+                }
                 _ => None,
             })
             .collect();
@@ -150,7 +159,14 @@ impl Command for LevelDelete {
                     Some(ElementKind::Wall(w)) => (w.top, w.height) = (WallTop::Unconnected, height),
                     Some(ElementKind::Column(c)) => (c.top, c.height) = (WallTop::Unconnected, height),
                     Some(ElementKind::Stair(st)) => (st.top, st.height) = (WallTop::Unconnected, height),
+                    Some(ElementKind::Ramp(r)) => (r.top, r.height) = (WallTop::Unconnected, height),
                     _ => {}
+                }
+            }
+            // Mass floors at the level go with it.
+            for id in masses {
+                if let Some(ElementKind::Mass(m)) = e.element_mut(id).map(|x| &mut x.kind) {
+                    m.floors.retain(|l| *l != level);
                 }
             }
             e.levels_mut().retain(|l| l.id != level);

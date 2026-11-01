@@ -5,7 +5,7 @@ use crate::guid::{encode, guid};
 use crate::schema::{ElementClass, TypeLayout, element_class};
 use crate::step::{Header, Id, StepWriter, Value, opt_str, reals};
 use cc_core::{Element, ElementId, ElementKind, ElementTypeId, LevelId, Project, RoofShape, TypeData, Uid};
-use cc_geom::{FRAME_COLOR, HostedPart, ModelGeometry, WallGeom, hosted_parts, polygon};
+use cc_geom::{FRAME_COLOR, ModelGeometry, WallGeom, opening_parts, polygon};
 use glam::{DVec2, DVec3};
 use std::collections::{BTreeMap, HashMap};
 
@@ -637,7 +637,20 @@ impl<'a> Exporter<'a> {
     /// points relative to `z0`.
     fn cut_body(&mut self, id: ElementId, z0: f64) -> Vec<Id> {
         let geom = self.geom;
-        geom.solids_of(id).filter(|s| !s.faces.is_empty()).map(|s| self.faceted_brep(&s.faces, z0)).collect()
+        geom.body_of(id).filter(|s| !s.faces.is_empty()).map(|s| self.faceted_brep(&s.faces, z0)).collect()
+    }
+
+    /// One faceted B-rep per closed piece of an element.
+    fn pieces(&mut self, e: &cc_core::Element, pieces: cc_geom::Pieces, z0: f64) -> Vec<Id> {
+        let mut items = Vec::new();
+        for piece in pieces {
+            let mut s = cc_geom::Solid::new(e.id, e.category(), [0, 0, 0]);
+            s.add_polygons(piece);
+            if !s.faces.is_empty() {
+                items.push(self.faceted_brep(&s.faces, z0));
+            }
+        }
+        items
     }
 
     /// Closed shell of planar faces (points relative to `z0`).
@@ -776,7 +789,7 @@ impl<'a> Exporter<'a> {
         Some(self.w.add("IFCPOLYGONALFACESET", args![points, Value::Null, ifc_faces, Value::Null]))
     }
 
-    /// Columns, beams, stairs and railings.
+    /// Columns, beams, stairs, ramps and railings.
     fn write_structure(&mut self) {
         let project = self.project;
         for e in project.elements.values() {
@@ -909,27 +922,54 @@ impl<'a> Exporter<'a> {
                         }
                     }
                 }
-                (ElementKind::Stair(s), TypeData::Stair { .. }) => {
+                (ElementKind::Stair(s), TypeData::Stair { build, .. }) => {
                     let Some(g) = cc_geom::stair_geom(project, e, s) else { continue };
-                    let items: Vec<Id> = g.steps().iter().map(|p| self.oriented_box(p, level_z)).collect();
+                    let items = self.pieces(e, g.pieces(build), level_z);
                     let count = |k: usize| Value::Typed("IFCCOUNTMEASURE", Box::new(Value::Int(k as i64)));
                     let length = |x: f64| Value::Typed("IFCPOSITIVELENGTHMEASURE", Box::new(Value::Real(x)));
-                    let props = vec![
+                    let mut props = vec![
                         ("NumberOfRiser", count(g.risers)),
                         ("NumberOfTreads", count(g.risers.saturating_sub(1))),
                         ("RiserHeight", length(g.riser)),
                         ("TreadLength", length(g.tread)),
                     ];
+                    if build.construction == cc_core::StairConstruction::CastInPlace {
+                        props.push(("WaistThickness", length(build.waist)));
+                    }
+                    let winders = s.layout.winders >= 2;
+                    let shape = match s.layout.shape {
+                        cc_core::StairShape::Straight => "STRAIGHT_RUN_STAIR",
+                        cc_core::StairShape::StraightLanding => "TWO_STRAIGHT_RUN_STAIR",
+                        cc_core::StairShape::LShaped if winders => "QUARTER_WINDING_STAIR",
+                        cc_core::StairShape::LShaped => "QUARTER_TURN_STAIR",
+                        cc_core::StairShape::UShaped => "HALF_TURN_STAIR",
+                        cc_core::StairShape::Spiral => "SPIRAL_STAIR",
+                    };
                     StructureProduct {
                         props: Some(("Pset_StairCommon", props)),
-                        ..StructureProduct::new("IFCSTAIR", "STRAIGHT_RUN_STAIR", items)
+                        ..StructureProduct::new("IFCSTAIR", shape, items)
                     }
+                    .brep()
+                }
+                (ElementKind::Ramp(r), TypeData::Ramp { thickness, .. }) => {
+                    let Some(g) = cc_geom::ramp_geom(project, e, r) else { continue };
+                    let items = self.pieces(e, g.pieces(*thickness), level_z);
+                    let shape = match (r.layout.shape, g.check.flights) {
+                        (cc_core::RampShape::Straight, 1) => "STRAIGHT_RUN_RAMP",
+                        (cc_core::RampShape::Straight, 2) => "TWO_STRAIGHT_RUN_RAMP",
+                        (cc_core::RampShape::LShaped, _) => "QUARTER_TURN_RAMP",
+                        (cc_core::RampShape::UShaped, 2) => "HALF_TURN_RAMP",
+                        (cc_core::RampShape::Spiral, _) => "SPIRAL_RAMP",
+                        _ => "NOTDEFINED",
+                    };
+                    StructureProduct::new("IFCRAMP", shape, items).brep()
                 }
                 (ElementKind::Railing(r), TypeData::Railing { .. }) => {
-                    let items: Vec<Id> =
-                        cc_geom::railing_parts(project, e, r).iter().map(|p| self.oriented_box(p, level_z)).collect();
-                    let q = vec![("Length", Quantity::Length(r.length()))];
-                    StructureProduct::new("IFCRAILING", "GUARDRAIL", items).quantities("Qto_RailingBaseQuantities", q)
+                    let items = self.pieces(e, cc_geom::railing_pieces(project, e, r), level_z);
+                    let q = vec![("Length", Quantity::Length(cc_geom::railing_length(project, e, r)))];
+                    StructureProduct::new("IFCRAILING", "GUARDRAIL", items)
+                        .quantities("Qto_RailingBaseQuantities", q)
+                        .brep()
                 }
                 _ => continue,
             };
@@ -1038,7 +1078,8 @@ impl<'a> Exporter<'a> {
                 Some(storey),
                 Frame::horizontal(DVec3::new(c.position.x, c.position.y, c.base_offset), rot),
             );
-            let parts = cc_geom::resolve_component(def, &c.overrides);
+            let mut parts = cc_geom::resolve_component(def, &c.overrides);
+            parts.retain(|p| !p.plan_only);
             // Shapes mix no representation types: with any mesh piece, all pieces are face sets.
             let tessellated = parts.iter().any(|p| !p.faces.is_empty());
             let mut items = Vec::new();
@@ -1342,8 +1383,13 @@ impl<'a> Exporter<'a> {
         let mut base =
             args![gid, n.clone(), ty.name.as_str(), description, n.clone(), n.clone(), n.clone(), n.clone(), n.clone()];
         let (entity, extra): (&str, Vec<Value>) = match ty.data {
-            // Rooms, grids, dimensions and texts have no IFC type object.
-            TypeData::Room {} | TypeData::Grid { .. } | TypeData::Dimension { .. } | TypeData::Text { .. } => {
+            // Rooms, grids, dimensions, texts, imported drawings and masses have no IFC type object.
+            TypeData::Room {}
+            | TypeData::Grid { .. }
+            | TypeData::Dimension { .. }
+            | TypeData::Text { .. }
+            | TypeData::CadImport {}
+            | TypeData::Mass { .. } => {
                 return None;
             }
             TypeData::Component { ref def, .. } => {
@@ -1396,6 +1442,7 @@ impl<'a> Exporter<'a> {
                 ("IFCSLABTYPE", args![Value::Enum("BASESLAB")])
             }
             TypeData::Stair { .. } => ("IFCSTAIRTYPE", args![Value::Enum("STRAIGHT_RUN_STAIR")]),
+            TypeData::Ramp { .. } => ("IFCRAMPTYPE", args![Value::Enum("NOTDEFINED")]),
             TypeData::Railing { .. } => ("IFCRAILINGTYPE", args![Value::Enum("GUARDRAIL")]),
             TypeData::Wall { .. } => ("IFCWALLTYPE", args![Value::Enum("STANDARD")]),
             TypeData::Floor { .. } => ("IFCSLABTYPE", args![Value::Enum("FLOOR")]),
@@ -1626,23 +1673,40 @@ impl<'a> Exporter<'a> {
         // The filling shares the opening's frame.
         let fill_placement = self.local_placement(Some(placement), fill_frame);
         let frame_style = self.style("Frame", FRAME_COLOR, 0.0);
-        let panel_style = self.material_style(ty.main_material());
-        let parts: Vec<HostedPart> = hosted_parts(&ty.data, width, height, g.half);
+        let mut parts = opening_parts(project, e, width, height, g.half);
+        parts.retain(|p| !p.plan_only);
+        // Shapes mix no representation types: with any faceted piece, all pieces are face sets.
+        let tessellated = parts.iter().any(|p| !p.faces.is_empty());
         let mut items = Vec::new();
-        for p in parts {
-            if (p.max - p.min).min_element() < 1e-6 {
-                continue;
-            }
-            let item = self.extrude_box(p.min, p.max);
-            self.styled(item, if p.panel { panel_style } else { frame_style });
+        for part in parts {
+            let item = if tessellated {
+                let faces = if part.faces.is_empty() {
+                    let mut s = cc_geom::Solid::new(e.id, e.category(), [0; 3]);
+                    s.add_prism(&part.footprint, |_| part.z0, |_| part.z1);
+                    s.faces.into_iter().map(|f| f.verts).collect()
+                } else {
+                    part.faces
+                };
+                let Some(item) = self.face_set(&faces) else { continue };
+                item
+            } else {
+                let profile = polygon::ccw(&part.footprint);
+                if profile.len() < 3 || part.z1 - part.z0 < 1e-6 {
+                    continue;
+                }
+                let position = self.placement3(Frame::at(DVec3::new(0.0, 0.0, part.z0)));
+                self.extrude_polygon(&profile, position, self.dir_z, part.z1 - part.z0)
+            };
+            let style = if part.material.is_empty() { frame_style } else { self.material_style(&part.material) };
+            self.styled(item, style);
             items.push(item);
         }
-        let shape = self.shape(items, None);
+        let shape = if tessellated { self.shape_of_type(items, None, "Tessellation") } else { self.shape(items, None) };
         let (type_w, type_h) = ty.opening_size().unwrap_or((width, height));
         let mut attrs = self.element_args(e, fill_placement, shape);
         attrs.extend(args![type_h, type_w]);
-        let (entity, set_name) = match ty.data {
-            TypeData::Door { .. } => {
+        let (entity, set_name) = match e.kind {
+            ElementKind::Door(_) => {
                 attrs.extend(args![Value::Enum("DOOR"), Value::Enum("NOTDEFINED"), Value::Null]);
                 ("IFCDOOR", "Qto_DoorBaseQuantities")
             }
@@ -1854,7 +1918,7 @@ impl<'a> Exporter<'a> {
         let geom = self.geom;
         let Some(ty) = project.element_type(e.type_id) else { return };
         let level_z = project.level_elevation(e.level);
-        let faces: Vec<cc_geom::Face> = geom.solids_of(e.id).flat_map(|s| s.faces.iter().cloned()).collect();
+        let faces: Vec<cc_geom::Face> = geom.body_of(e.id).flat_map(|s| s.faces.iter().cloned()).collect();
         if faces.is_empty() {
             return;
         }
@@ -2008,6 +2072,7 @@ fn common_pset(project: &Project, e: &Element) -> Option<&'static str> {
         ElementKind::Column(_) => "Pset_ColumnCommon",
         ElementKind::Beam(_) => "Pset_BeamCommon",
         ElementKind::Stair(_) => "Pset_StairCommon",
+        ElementKind::Ramp(_) => "Pset_RampCommon",
         ElementKind::Railing(_) => "Pset_RailingCommon",
         ElementKind::Foundation(_) => match project.element_type(e.type_id).map(|t| &t.data) {
             Some(TypeData::Foundation { kind: cc_core::FoundationKind::Slab, .. }) => "Pset_SlabCommon",
@@ -2116,6 +2181,8 @@ fn component_entity(def: &cc_core::ComponentDef) -> (&'static str, &'static str)
         cc_core::ComponentKind::Lighting => ("IFCLIGHTFIXTURE", "NOTDEFINED"),
         cc_core::ComponentKind::Electrical => ("IFCBUILDINGELEMENTPROXY", "NOTDEFINED"),
         cc_core::ComponentKind::Generic => ("IFCBUILDINGELEMENTPROXY", "NOTDEFINED"),
+        cc_core::ComponentKind::Door => ("IFCDOOR", "DOOR"),
+        cc_core::ComponentKind::Window => ("IFCWINDOW", "WINDOW"),
     }
 }
 

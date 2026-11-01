@@ -66,6 +66,14 @@ ccad -p casa.ccad run phases_list
 
 Cada planta, elevação, corte, vista 3D e tabela mostra o modelo na sua fase (`phase`) com um filtro de fases (`phase_filter`, ambos com `view_set`; modelos de vista controlam o filtro, não a fase). Em relação à fase da vista um elemento é *existente* (construído antes, de pé), *demolido* (nesta fase), *novo* (construído nesta fase) ou *temporário* (construído e demolido nela); elementos construídos depois ou demolidos antes não aparecem. Os filtros de fases (`phase_filters_list`, `phase_filter_create`, `phase_filter_set`, `phase_filter_delete`; o modelo traz *Mostrar tudo*, *Mostrar completo*, *Mostrar novo*, *Mostrar anterior + demolição*, *Mostrar anterior + novo*, *Mostrar fase anterior* e *Mostrar demolição + novo*) dizem, para cada situação, `not_displayed`, `by_category` ou `overridden`, que usa os gráficos da situação definidos no projeto (`phase_graphics_get`, `phase_graphics_set`: existente esmaecido, demolido tracejado e sem hachura de corte, temporário esmaecido e tracejado), abaixo das sobreposições de elementos e dos filtros de vista e acima da categoria. Uma vista cuja fase deixa elementos de fora tem geometria própria: portas de fases posteriores não abrem paredes existentes e paredes só se unem com paredes da fase. Um ambiente é delimitado pelas paredes de pé ao fim da fase em que é criado, então paredes demolidas nessa fase ou antes não o delimitam. Tabelas listam o que sua fase e seu filtro mostram e oferecem os campos `PhaseCreated` e `PhaseDemolished` (que também servem em regras de filtros, como `phase_created` e `phase_demolished`).
 
+**Desenhos CAD importados.** `cad_import` lê um arquivo DWG (R12 até 2018 e posteriores, pela biblioteca acadrust) ou DXF (ASCII ou binário, lido pelo próprio ConstructCAD) para uma planta, planta de forro, elevação, corte ou legenda, num passo de desfazer, e informa o que leu: `format`, `version`, `units` (e `units_assumed`), `layers`, `entities`, `blocks`, `primitives`, `skipped` (entidades não desenhadas, por tipo), `truncated` e a extensão na vista (`extents`). Blocos são inseridos (aninhados, escalados, girados, em matriz), arcos e círculos continuam arcos, elipses, splines e contornos de hachuras viram polilinhas, textos e MTEXT mantêm posição, altura e rotação; sólidos 3D, imagens, linhas infinitas e entidades parecidas são ignorados. `position` com `align` posiciona a origem do desenho (`origin`, o padrão), o centro da sua extensão (`center`) ou a origem, a menos que fique a mais de 1 km do conteúdo da vista (`auto`); `units` substitui as do arquivo (`mm`, `cm`, `dm`, `m`, `km`, `in`, `ft`, `yd`, `mi`), e arquivos sem unidades são lidos em metros quando pequenos, senão em milímetros. O elemento começa fixado e só a sua vista o desenha, sob o modelo (categoria `cadimport`; vistas 3D e exportação IFC o deixam de fora). `element_get` mostra o posicionamento em `params` (`units`, `scale`, `position`, `rotation_deg`, `mirrored`, `hidden_layers`, `color_mode` `Grey`/`Layers`/`Black`, `halftone`), mas não o desenho; `element_set` os altera; os comandos de mover, girar, espelhar, fixar e excluir valem para ele. `cad_layers` lista as camadas e `cad_layers_set` as mostra ou oculta.
+
+```sh
+ccad -p casa.ccad --save run cad_import path=levantamento.dwg view=Térreo align=auto
+ccad -p casa.ccad --save run element_set id=120 'params={"units": "Centimeters", "halftone": true}'
+ccad -p casa.ccad --save run cad_layers_set id=120 'layers=["COTAS", "TEXTOS"]' visible=false
+```
+
 **Validação e desfazer.** Cada edição é um passo de desfazer (`undo`, `redo`). Uma edição que deixaria o modelo inválido — uma porta numa parede inexistente, uma medida negativa, uma referência a nada — é recusada sem deixar rastro. Elementos fixados não são movidos, aparados nem excluídos.
 
 **Erros.** Um comando que falha devolve `{"error": {"code": …, "message": …}}`, com a mensagem no idioma da sessão (`--lang`, `language_set`).
@@ -95,7 +103,7 @@ ccad [opções] mcp                  serve os comandos por MCP (stdio)
 --save                    salva o projeto no fim (no próprio arquivo)
 --save-as <arquivo>       salva o projeto no fim em <arquivo>
 --lang <código>           idioma dos nomes padrão e mensagens (também CCAD_LANG):
-                          en, pt-BR, es, fr, de, it, pl ou uk-UA
+                          en, pt-BR, es, fr, de, it, lo, pl, uk-UA, zh-TW ou zh-CN
 ```
 
 Os argumentos de `run` podem ser um objeto JSON, `@arquivo.json`, `-` (entrada padrão) ou pares `chave=valor`, cujos valores são lidos como JSON quando possível e como texto caso contrário:
@@ -142,7 +150,7 @@ Scripts não têm variáveis: um passo não usa o id criado por um passo anterio
 
 ## Macros no aplicativo
 
-*Gerenciar → Macros → Gravar macro* grava as alterações que você fizer até apertar *Parar gravação*; a macro é salva como script (`.ccmacro`, o formato acima). *Executar macro* roda uma macro ou qualquer script no projeto aberto; `ccad script` roda os mesmos arquivos.
+*Gerenciar → Macros → Gravar macro* grava as alterações que você fizer até apertar *Parar gravação*; a macro é salva como script (`.ccmacro`, o formato acima). *Executar macro* roda uma macro ou qualquer script no projeto aberto; `ccad script` roda os mesmos arquivos. Com uma pasta de macros definida em *Preferências → Locais de arquivos*, os diálogos de arquivo de macro começam nela e *Executar macro* vira um menu dos arquivos `.ccmacro` dela (mais *Procurar…* para qualquer outro arquivo).
 
 - Só edições são gravadas: abrir, salvar e exportar ficam de fora, então reproduzir nunca sobrescreve arquivos.
 - Um valor arrastado nas propriedades é gravado uma vez, com o valor final; alterações feitas num diálogo cancelado não são gravadas.

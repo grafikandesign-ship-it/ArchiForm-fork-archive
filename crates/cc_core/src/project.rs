@@ -210,6 +210,15 @@ impl Project {
 
         let layer = |m: &str, t: f64| Layer { material: m.into(), thickness: t, function: LayerFunction::Structure };
         let finish = |m: &str, t: f64| Layer { material: m.into(), thickness: t, function: LayerFunction::Finish };
+        let names = crate::openings::OpeningNames::new(&n);
+        let door = |w: f64, h: f64, m: &str| TypeData::Component {
+            component: names.door.clone(),
+            def: crate::openings::door_def(&names, w, h, m),
+        };
+        let window = |w: f64, h: f64, sill: f64, m: &str| TypeData::Component {
+            component: names.window.clone(),
+            def: crate::openings::window_def(&names, w, h, sill, m),
+        };
         let types = [
             (
                 &n("tpl-type-masonry-15"),
@@ -237,16 +246,10 @@ impl Project {
                 &n("tpl-type-drywall-10"),
                 TypeData::Wall { layers: vec![layer(&n("tpl-mat-gypsum"), 0.10)], function: WallFunction::Interior },
             ),
-            (&n("tpl-type-door-80"), TypeData::Door { width: 0.8, height: 2.1, material: n("tpl-mat-wood") }),
-            (&n("tpl-type-door-90"), TypeData::Door { width: 0.9, height: 2.1, material: n("tpl-mat-wood") }),
-            (
-                &n("tpl-type-window-120"),
-                TypeData::Window { width: 1.2, height: 1.2, default_sill: 1.0, material: n("tpl-mat-glass") },
-            ),
-            (
-                &n("tpl-type-window-150"),
-                TypeData::Window { width: 1.5, height: 1.0, default_sill: 1.1, material: n("tpl-mat-glass") },
-            ),
+            (&n("tpl-type-door-80"), door(0.8, 2.1, &n("tpl-mat-wood"))),
+            (&n("tpl-type-door-90"), door(0.9, 2.1, &n("tpl-mat-wood"))),
+            (&n("tpl-type-window-120"), window(1.2, 1.2, 1.0, &n("tpl-mat-glass"))),
+            (&n("tpl-type-window-150"), window(1.5, 1.0, 1.1, &n("tpl-mat-glass"))),
             (
                 &n("tpl-type-slab-12"),
                 TypeData::Floor {
@@ -342,7 +345,14 @@ impl Project {
             ),
             (
                 &n("tpl-type-stair"),
-                TypeData::Stair { width: 1.0, max_riser: 0.18, tread: 0.28, material: n("tpl-mat-concrete") },
+                TypeData::Stair {
+                    width: 1.0,
+                    max_riser: 0.18,
+                    tread: 0.28,
+                    material: n("tpl-mat-concrete"),
+                    build: Default::default(),
+                    rules: Default::default(),
+                },
             ),
             (&n("tpl-type-railing"), TypeData::Railing { height: 1.1, post_spacing: 1.2, material: n("tpl-mat-wood") }),
             (&n("tpl-type-pipe-20"), TypeData::Pipe { diameter: 0.020, material: n("tpl-mat-pvc") }),
@@ -362,7 +372,11 @@ impl Project {
             (&n("tpl-type-text-large"), TypeData::Text { size: 3.5, symbol: crate::LeaderSymbol::Arrow }),
             (
                 &n("tpl-type-roof-tile"),
-                TypeData::Roof { layers: vec![finish(&n("tpl-mat-roof-tile"), 0.05), layer(&n("tpl-mat-wood"), 0.10)] },
+                TypeData::Roof {
+                    layers: vec![finish(&n("tpl-mat-roof-tile"), 0.05), layer(&n("tpl-mat-wood"), 0.10)],
+                    covering: None,
+                    framing: Default::default(),
+                },
             ),
         ];
         for (name, data) in types {
@@ -476,6 +490,8 @@ impl Project {
                     max_riser: 0.18,
                     tread: 0.28,
                     material: template_default("tpl-mat-concrete").to_string(),
+                    build: Default::default(),
+                    rules: Default::default(),
                 },
             ),
             (
@@ -698,6 +714,16 @@ impl Project {
         (base, top.max(base + 0.05))
     }
 
+    /// Base and top elevation of a ramp (the top at least 1 cm above).
+    pub fn ramp_span(&self, element: &Element, ramp: &crate::Ramp) -> (f64, f64) {
+        let base = self.level_elevation(element.level) + ramp.base_offset;
+        let top = match ramp.top {
+            crate::WallTop::Unconnected => base + ramp.height,
+            crate::WallTop::Level { level, offset } => self.level_elevation(level) + offset,
+        };
+        (base, top.max(base + 0.01))
+    }
+
     /// Elevation of a wall's base.
     pub fn wall_base_z(&self, element: &Element, wall: &crate::Wall) -> f64 {
         self.level_elevation(element.level) + wall.base_offset
@@ -877,6 +903,13 @@ impl Project {
         self.elements.values().filter(move |e| e.as_hosted().is_some_and(|h| h.host == wall))
     }
 
+    /// The railings that follow stair `host`.
+    pub fn railings_of(&self, host: ElementId) -> impl Iterator<Item = &Element> {
+        self.elements
+            .values()
+            .filter(move |e| matches!(&e.kind, ElementKind::Railing(r) if r.stair.is_some_and(|h| h.host == host)))
+    }
+
     /// The reinforcement sets of beam or column `host`.
     pub fn rebar_of(&self, host: ElementId) -> impl Iterator<Item = (&Element, &crate::Rebar)> {
         self.elements.values().filter_map(move |e| match &e.kind {
@@ -924,6 +957,52 @@ impl Project {
         self.levels.iter().filter(|l| l.elevation > elevation + 1e-9).min_by(|a, b| a.elevation.total_cmp(&b.elevation))
     }
 
+    /// Before `e` moves from its level to `to`: a top attached to a level
+    /// moves up or down as many levels as the base (a column from the ground
+    /// floor to the first floor pasted on the first floor reaches the second).
+    /// When there is no such level, or it is not above the new base, the top
+    /// is unconnected at the element's height.
+    pub fn move_top_with_base(&self, e: &mut crate::Element, to: LevelId) {
+        let from = e.level;
+        if from == to {
+            return;
+        }
+        let p = self;
+        let span = |(base, top): (f64, f64)| top - base;
+        let height = match &e.kind {
+            crate::ElementKind::Wall(w) => p.wall_height(e, w),
+            crate::ElementKind::Column(c) => span(p.column_span(e, c)),
+            crate::ElementKind::Stair(s) => span(p.stair_span(e, s)),
+            crate::ElementKind::Ramp(r) => span(p.ramp_span(e, r)),
+            _ => return,
+        };
+        let (top, own_height, base_offset) = match &mut e.kind {
+            crate::ElementKind::Wall(w) => (&mut w.top, &mut w.height, w.base_offset),
+            crate::ElementKind::Column(c) => (&mut c.top, &mut c.height, c.base_offset),
+            crate::ElementKind::Stair(s) => (&mut s.top, &mut s.height, s.base_offset),
+            crate::ElementKind::Ramp(r) => (&mut r.top, &mut r.height, r.base_offset),
+            _ => return,
+        };
+        let crate::WallTop::Level { level: top_level, offset } = *top else { return };
+        let mut order: Vec<&crate::Level> = p.levels.iter().collect();
+        order.sort_by(|a, b| a.elevation.total_cmp(&b.elevation));
+        let index = |id: LevelId| order.iter().position(|l| l.id == id);
+        let shifted = match (index(from), index(top_level), index(to)) {
+            (Some(f), Some(t), Some(n)) => (n + t).checked_sub(f).and_then(|i| order.get(i)),
+            _ => None,
+        };
+        let base_z = p.level_elevation(to) + base_offset;
+        match shifted {
+            Some(l) if l.elevation + offset > base_z + 1e-6 => *top = crate::WallTop::Level { level: l.id, offset },
+            _ => {
+                *top = crate::WallTop::Unconnected;
+                if height.is_finite() && height > 0.0 {
+                    *own_height = height;
+                }
+            }
+        }
+    }
+
     pub fn sort_levels(&mut self) {
         self.levels.sort_by(|a, b| a.elevation.total_cmp(&b.elevation));
     }
@@ -942,6 +1021,17 @@ pub(crate) fn template_default(key: &str) -> &'static str {
         "tpl-type-door-90" => "Porta 90x210",
         "tpl-type-window-120" => "Janela 120x120",
         "tpl-type-window-150" => "Janela 150x100",
+        "tpl-comp-door" => "Porta de giro",
+        "tpl-conn-sewer" => "Esgoto",
+        "tpl-conn-cold-water" => "Água fria",
+        "tpl-conn-hot-water" => "Água quente",
+        "tpl-comp-window" => "Janela",
+        "tpl-param-sill" => "Peitoril",
+        "tpl-piece-frame" => "Batente",
+        "tpl-piece-leaf" => "Folha",
+        "tpl-piece-sash" => "Caixilho",
+        "tpl-piece-glass" => "Vidro",
+        "tpl-piece-sill-board" => "Pingadeira",
         "tpl-type-slab-12" => "Laje 12 cm",
         "tpl-type-ceiling-gypsum" => "Forro de gesso",
         "tpl-type-roof-tile" => "Telhado cerâmico",

@@ -34,16 +34,22 @@ pub enum ComponentKind {
     Electrical,
     #[default]
     Generic,
+    /// Doors: with a [`HostOpening`], their types are of the door category.
+    Door,
+    /// Windows: with a [`HostOpening`], their types are of the window category.
+    Window,
 }
 
 impl ComponentKind {
-    pub const ALL: [ComponentKind; 6] = [
+    pub const ALL: [ComponentKind; 8] = [
         ComponentKind::Furniture,
         ComponentKind::Casework,
         ComponentKind::Plumbing,
         ComponentKind::Lighting,
         ComponentKind::Electrical,
         ComponentKind::Generic,
+        ComponentKind::Door,
+        ComponentKind::Window,
     ];
 
     pub fn key(self) -> &'static str {
@@ -54,6 +60,8 @@ impl ComponentKind {
             ComponentKind::Lighting => "comp-kind-lighting",
             ComponentKind::Electrical => "comp-kind-electrical",
             ComponentKind::Generic => "comp-kind-generic",
+            ComponentKind::Door => "comp-kind-door",
+            ComponentKind::Window => "comp-kind-window",
         }
     }
 }
@@ -110,6 +118,13 @@ pub enum ComponentShape {
     /// `angle` degrees about the line `u = axis` of the plane (vertical in
     /// the front and side planes).
     Revolution { plane: SketchPlane, points: Vec<ProfilePoint>, offset: String, axis: String, angle: String },
+    /// Closed `profile` (u to the left of the path, v along the plane's
+    /// normal) carried along the open `path` drawn on `plane`, which stands
+    /// at `offset` on its normal axis; mitered at the path's corners.
+    Sweep { plane: SketchPlane, path: Vec<ProfilePoint>, offset: String, profile: Vec<ProfilePoint> },
+    /// The solid joining the closed `bottom` outline on `plane` at `offset`
+    /// to the closed `top` outline `depth` farther along its normal.
+    Blend { plane: SketchPlane, bottom: Vec<ProfilePoint>, top: Vec<ProfilePoint>, offset: String, depth: String },
     /// Fixed polyhedral surface (not parametric): vertices in the component
     /// frame and faces as counter-clockwise (seen from outside) index loops.
     Mesh { vertices: Vec<[f64; 3]>, faces: Vec<Vec<u32>> },
@@ -145,6 +160,19 @@ impl ComponentShape {
                 out.push(("angle", angle));
                 out
             }
+            ComponentShape::Sweep { path, offset, profile, .. } => {
+                let mut out = profile_expressions(path);
+                out.extend(profile_expressions(profile));
+                out.push(("offset", offset));
+                out
+            }
+            ComponentShape::Blend { bottom, top, offset, depth, .. } => {
+                let mut out = profile_expressions(bottom);
+                out.extend(profile_expressions(top));
+                out.push(("offset", offset));
+                out.push(("depth", depth));
+                out
+            }
             ComponentShape::Mesh { .. } => Vec::new(),
         }
     }
@@ -170,6 +198,18 @@ impl ComponentShape {
                 out.extend([offset, axis, angle]);
                 out
             }
+            ComponentShape::Sweep { path, offset, profile, .. } => {
+                let mut out = profile_expressions_mut(path);
+                out.extend(profile_expressions_mut(profile));
+                out.push(offset);
+                out
+            }
+            ComponentShape::Blend { bottom, top, offset, depth, .. } => {
+                let mut out = profile_expressions_mut(bottom);
+                out.extend(profile_expressions_mut(top));
+                out.extend([offset, depth]);
+                out
+            }
             ComponentShape::Mesh { .. } => Vec::new(),
         }
     }
@@ -179,6 +219,8 @@ impl ComponentShape {
         match self {
             ComponentShape::Extrusion { points, .. } => points.len(),
             ComponentShape::Profile { points, .. } | ComponentShape::Revolution { points, .. } => points.len(),
+            ComponentShape::Sweep { path, profile, .. } => path.len() + profile.len(),
+            ComponentShape::Blend { bottom, top, .. } => bottom.len() + top.len(),
             _ => 0,
         }
     }
@@ -214,6 +256,9 @@ pub struct ComponentItem {
     /// The piece is cut out of the solid pieces it overlaps instead of adding to them.
     #[serde(default, skip_serializing_if = "is_false")]
     pub void: bool,
+    /// A plan symbol only (a door's swing): drawn in plans, not a solid.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub plan_only: bool,
 }
 
 fn yes() -> bool {
@@ -222,6 +267,123 @@ fn yes() -> bool {
 
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+/// Which way a run leaves a connector, in the component's frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum ConnectorDirection {
+    #[default]
+    Down,
+    Up,
+    /// Towards -Y.
+    Front,
+    /// Towards +Y (usually the wall).
+    Back,
+    /// Towards -X.
+    Left,
+    /// Towards +X.
+    Right,
+}
+
+impl ConnectorDirection {
+    pub const ALL: [ConnectorDirection; 6] = [
+        ConnectorDirection::Down,
+        ConnectorDirection::Up,
+        ConnectorDirection::Front,
+        ConnectorDirection::Back,
+        ConnectorDirection::Left,
+        ConnectorDirection::Right,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            ConnectorDirection::Down => "conn-dir-down",
+            ConnectorDirection::Up => "conn-dir-up",
+            ConnectorDirection::Front => "conn-dir-front",
+            ConnectorDirection::Back => "conn-dir-back",
+            ConnectorDirection::Left => "conn-dir-left",
+            ConnectorDirection::Right => "conn-dir-right",
+        }
+    }
+
+    /// Unit vector in the component's frame.
+    pub fn vector(self) -> DVec3 {
+        match self {
+            ConnectorDirection::Down => -DVec3::Z,
+            ConnectorDirection::Up => DVec3::Z,
+            ConnectorDirection::Front => -DVec3::Y,
+            ConnectorDirection::Back => DVec3::Y,
+            ConnectorDirection::Left => -DVec3::X,
+            ConnectorDirection::Right => DVec3::X,
+        }
+    }
+
+    /// Whether runs leave it vertically.
+    pub fn is_vertical(self) -> bool {
+        matches!(self, ConnectorDirection::Down | ConnectorDirection::Up)
+    }
+}
+
+/// A point where a pipe or conduit connects to the component: a toilet has
+/// a water inlet and a sewer outlet, an outlet its electrical connection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentConnector {
+    pub name: String,
+    /// The kind of system it connects to.
+    pub system: crate::SystemKind,
+    /// Position in the component's frame (expressions).
+    pub x: String,
+    pub y: String,
+    pub z: String,
+    #[serde(default)]
+    pub direction: ConnectorDirection,
+    /// Outside diameter of the run it takes, meters (an expression); empty for unset.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub diameter: String,
+}
+
+impl ComponentConnector {
+    pub fn expressions_mut(&mut self) -> [&mut String; 4] {
+        [&mut self.x, &mut self.y, &mut self.z, &mut self.diameter]
+    }
+}
+
+/// A connector resolved in the component's frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedConnector {
+    pub index: usize,
+    pub name: String,
+    pub system: crate::SystemKind,
+    pub point: DVec3,
+    pub direction: ConnectorDirection,
+    pub diameter: Option<f64>,
+}
+
+/// Name of the host wall's thickness in the expressions of door and window
+/// components (see [`crate::openings`]).
+pub const WALL_THICKNESS: &str = "WallThickness";
+
+/// The opening a door or window component cuts in its host wall: `width`
+/// wide, centered on the component, `height` tall from the sill.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HostOpening {
+    /// Expression of the parameters.
+    pub width: String,
+    /// Expression of the parameters.
+    pub height: String,
+    /// Sill height of new elements (windows), an expression; empty for 0.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub sill: String,
+    /// Plans draw the pieces marked `in_plan` instead of the category's
+    /// symbol (a door's swing, a window's sash lines).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub own_symbol: bool,
+}
+
+impl HostOpening {
+    pub fn expressions_mut(&mut self) -> [&mut String; 3] {
+        [&mut self.width, &mut self.height, &mut self.sill]
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -238,6 +400,24 @@ pub struct ComponentDef {
     /// Plumbing fixture or electrical device data.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mep: Option<crate::MepData>,
+    /// The opening a door or window cuts in its wall.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opening: Option<Box<HostOpening>>,
+    /// Where pipes and conduits connect to it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub connectors: Vec<ComponentConnector>,
+    /// Named planes whose positions expressions read (see [`crate::component_ref`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ref_planes: Vec<crate::component_ref::RefPlane>,
+    /// Named lines on the sketch planes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ref_lines: Vec<crate::component_ref::RefLine>,
+    /// Dimensions between reference planes, labeled by the parameters that drive them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dimensions: Vec<crate::component_ref::RefDimension>,
+    /// Planes kept halfway between two others (EQ).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub equals: Vec<crate::component_ref::RefEqual>,
 }
 
 /// An IFC entity class with its predefined and object types.
@@ -270,6 +450,8 @@ pub struct ComponentPart {
     pub in_plan: bool,
     /// Cut out of the other pieces (see `cc_geom::resolve_component`).
     pub void: bool,
+    /// Drawn in plans only (see [`ComponentItem::plan_only`]).
+    pub plan_only: bool,
     /// Faces of a piece that is not a vertical prism (empty for prisms).
     pub faces: Vec<Vec<DVec3>>,
 }
@@ -314,18 +496,80 @@ impl ComponentDef {
             .collect()
     }
 
+    /// Width and height of the opening a door or window cuts (`None` for
+    /// other components, or when they do not evaluate to positive sizes).
+    pub fn opening_size(&self) -> Option<(f64, f64)> {
+        let o = self.opening.as_ref()?;
+        let scope = self.scope(&BTreeMap::new(), &[]);
+        let lookup = |name: &str| scope.get(name);
+        let (w, h) = (expr::eval(&o.width, &lookup).ok()?, expr::eval(&o.height, &lookup).ok()?);
+        (w > 0.0 && h > 0.0).then_some((w, h))
+    }
+
+    /// The connectors whose expressions evaluate, in the component's frame.
+    pub fn resolve_connectors(&self, overrides: &BTreeMap<String, f64>) -> Vec<ResolvedConnector> {
+        let scope = self.scope(overrides, &[]);
+        let lookup = |name: &str| scope.get(name);
+        self.connectors
+            .iter()
+            .enumerate()
+            .filter_map(|(index, c)| {
+                let v = |text: &str| expr::eval(text, &lookup).ok();
+                let point = DVec3::new(v(&c.x)?, v(&c.y)?, v(&c.z)?);
+                let diameter = if c.diameter.trim().is_empty() { None } else { v(&c.diameter).filter(|d| *d > 0.0) };
+                Some(ResolvedConnector {
+                    index,
+                    name: c.name.clone(),
+                    system: c.system,
+                    point,
+                    direction: c.direction,
+                    diameter,
+                })
+            })
+            .collect()
+    }
+
+    /// Sill height of new doors and windows of this definition (0 when unset or invalid).
+    pub fn default_sill(&self) -> f64 {
+        let Some(o) = self.opening.as_ref().filter(|o| !o.sill.trim().is_empty()) else { return 0.0 };
+        let scope = self.scope(&BTreeMap::new(), &[]);
+        expr::eval(&o.sill, &|name: &str| scope.get(name)).map_or(0.0, |v| v.max(0.0))
+    }
+
+    /// The category of the types of this definition: doors and windows
+    /// (with an opening) have their own.
+    pub fn category(&self) -> crate::Category {
+        match (self.kind, &self.opening) {
+            (ComponentKind::Door, Some(_)) => crate::Category::Door,
+            (ComponentKind::Window, Some(_)) => crate::Category::Window,
+            _ => crate::Category::Component,
+        }
+    }
+
     /// Resolve every piece; pieces that fail are reported with their index.
     pub fn resolve(&self, overrides: &BTreeMap<String, f64>) -> (Vec<ComponentPart>, Vec<(usize, PartError)>) {
-        let values = self.values(overrides);
-        let lookup = |name: &str| values.get(name).copied();
+        self.resolve_in(overrides, &[])
+    }
+
+    /// Resolve every piece with `extra` names defined too (a door's
+    /// [`WALL_THICKNESS`]); parameters of the same name win. Pieces also
+    /// read the reference planes.
+    pub fn resolve_in(
+        &self,
+        overrides: &BTreeMap<String, f64>,
+        extra: &[(&str, f64)],
+    ) -> (Vec<ComponentPart>, Vec<(usize, PartError)>) {
+        let scope = self.scope(overrides, extra);
+        let lookup = |name: &str| scope.get(name);
         let mut parts = Vec::new();
         let mut errors = Vec::new();
         for (i, item) in self.items.iter().enumerate() {
             let resolved = match &item.shape {
                 ComponentShape::Mesh { vertices, faces } => resolve_mesh(vertices, faces),
-                ComponentShape::Profile { .. } | ComponentShape::Revolution { .. } => {
-                    resolve_profile(&item.shape, &lookup)
-                }
+                ComponentShape::Profile { .. }
+                | ComponentShape::Revolution { .. }
+                | ComponentShape::Sweep { .. }
+                | ComponentShape::Blend { .. } => resolve_profile(&item.shape, &lookup),
                 shape => resolve_shape(shape, &lookup).map(|(footprint, z0, z1)| (footprint, z0, z1, Vec::new())),
             };
             match resolved {
@@ -335,8 +579,9 @@ impl ComponentDef {
                     z0,
                     z1,
                     material: item.material.clone(),
-                    in_plan: item.in_plan,
-                    void: item.void,
+                    in_plan: item.in_plan || item.plan_only,
+                    void: item.void && !item.plan_only,
+                    plan_only: item.plan_only,
                     faces,
                 }),
                 Err(e) => errors.push((i, e)),
@@ -352,13 +597,60 @@ impl ComponentDef {
 
     /// Rename a parameter and every reference to it in the pieces.
     pub fn rename_param(&mut self, old: &str, new: &str) {
+        self.rename(old, new);
+    }
+
+    /// Rename a parameter, reference plane or line and every expression,
+    /// dimension and label that reads it.
+    pub fn rename(&mut self, old: &str, new: &str) {
         for p in &mut self.params {
             if p.name == old {
                 p.name = new.to_string();
             }
         }
+        for p in &mut self.ref_planes {
+            if p.name == old {
+                p.name = new.to_string();
+            }
+            p.at = replace_name(&p.at, old, new);
+        }
+        for l in &mut self.ref_lines {
+            if l.name == old {
+                l.name = new.to_string();
+            }
+            for e in [&mut l.offset, &mut l.start.0, &mut l.start.1, &mut l.end.0, &mut l.end.1] {
+                *e = replace_name(e, old, new);
+            }
+        }
+        for d in &mut self.dimensions {
+            for name in [&mut d.from, &mut d.to] {
+                if name == old {
+                    *name = new.to_string();
+                }
+            }
+            if d.label.as_deref() == Some(old) {
+                d.label = Some(new.to_string());
+            }
+        }
+        for q in &mut self.equals {
+            for name in [&mut q.a, &mut q.middle, &mut q.b] {
+                if name == old {
+                    *name = new.to_string();
+                }
+            }
+        }
         for item in &mut self.items {
             for e in item.shape.expressions_mut() {
+                *e = replace_name(e, old, new);
+            }
+        }
+        if let Some(o) = &mut self.opening {
+            for e in o.expressions_mut() {
+                *e = replace_name(e, old, new);
+            }
+        }
+        for c in &mut self.connectors {
+            for e in c.expressions_mut() {
                 *e = replace_name(e, old, new);
             }
         }
@@ -367,7 +659,7 @@ impl ComponentDef {
 
 /// Replace whole-identifier occurrences of `old` in `text` (numbers such as
 /// `2e3` are left alone).
-fn replace_name(text: &str, old: &str, new: &str) -> String {
+pub fn replace_name(text: &str, old: &str, new: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
@@ -424,6 +716,16 @@ fn resolve_profile(shape: &ComponentShape, lookup: &dyn Fn(&str) -> Option<f64>)
             let outline = profile::outline(points, lookup).map_err(from)?;
             let (offset, axis, angle) = (ev("offset", offset)?, ev("axis", axis)?, ev("angle", angle)?);
             profile::revolve(*plane, &outline, offset, axis, angle).map_err(from)?
+        }
+        ComponentShape::Sweep { plane, path, offset, profile } => {
+            let path = crate::sweep::path(path, lookup).map_err(from)?;
+            let section = profile::outline(profile, lookup).map_err(from)?;
+            crate::sweep::sweep(*plane, &path, ev("offset", offset)?, &section).map_err(from)?
+        }
+        ComponentShape::Blend { plane, bottom, top, offset, depth } => {
+            let (low, high) =
+                (profile::outline(bottom, lookup).map_err(from)?, profile::outline(top, lookup).map_err(from)?);
+            crate::sweep::blend(*plane, &low, &high, ev("offset", offset)?, ev("depth", depth)?).map_err(from)?
         }
         _ => return Err(PartError::Degenerate),
     };
@@ -521,9 +823,11 @@ fn resolve_shape(
             }
             Ok((footprint, z, z + h))
         }
-        ComponentShape::Mesh { .. } | ComponentShape::Profile { .. } | ComponentShape::Revolution { .. } => {
-            Err(PartError::Degenerate)
-        }
+        ComponentShape::Mesh { .. }
+        | ComponentShape::Profile { .. }
+        | ComponentShape::Revolution { .. }
+        | ComponentShape::Sweep { .. }
+        | ComponentShape::Blend { .. } => Err(PartError::Degenerate),
     }
 }
 
@@ -556,6 +860,7 @@ pub fn library(n: &dyn Fn(&str) -> String) -> Vec<(String, String, ComponentDef)
             material: material.to_string(),
             in_plan: plan,
             void: false,
+            plan_only: false,
         }
     };
     let s = |v: &str| v.to_string();
@@ -589,10 +894,13 @@ pub fn library(n: &dyn Fn(&str) -> String) -> Vec<(String, String, ComponentDef)
     items.extend(legs("0.05", format!("{h} - 0.03"), &wood));
     let table = ComponentDef {
         kind: ComponentKind::Furniture,
+        opening: None,
+        connectors: Vec::new(),
         ifc: None,
         mep: None,
         params: vec![length(&w, 1.2), length(&d, 0.8), length(&h, 0.75)],
         items,
+        ..Default::default()
     };
     out.push((n("tpl-comp-table"), n("tpl-type-table"), table));
 
@@ -623,16 +931,21 @@ pub fn library(n: &dyn Fn(&str) -> String) -> Vec<(String, String, ComponentDef)
     ));
     let chair = ComponentDef {
         kind: ComponentKind::Furniture,
+        opening: None,
+        connectors: Vec::new(),
         ifc: None,
         mep: None,
         params: vec![length(&w, 0.45), length(&d, 0.5), length(&h, 0.9), length(&seat, 0.45)],
         items,
+        ..Default::default()
     };
     out.push((n("tpl-comp-chair"), n("tpl-type-chair"), chair));
 
     // Bed: mattress base and headboard at the back.
     let bed = ComponentDef {
         kind: ComponentKind::Furniture,
+        opening: None,
+        connectors: Vec::new(),
         ifc: None,
         mep: None,
         params: vec![length(&w, 1.4), length(&d, 1.9), length(&h, 0.5)],
@@ -660,6 +973,7 @@ pub fn library(n: &dyn Fn(&str) -> String) -> Vec<(String, String, ComponentDef)
                 true,
             ),
         ],
+        ..Default::default()
     };
     out.push((n("tpl-comp-bed"), n("tpl-type-bed"), bed));
 
@@ -667,6 +981,8 @@ pub fn library(n: &dyn Fn(&str) -> String) -> Vec<(String, String, ComponentDef)
     let arm = "0.15";
     let sofa = ComponentDef {
         kind: ComponentKind::Furniture,
+        opening: None,
+        connectors: Vec::new(),
         ifc: None,
         mep: None,
         params: vec![length(&w, 2.0), length(&d, 0.9), length(&h, 0.8), length(&seat, 0.42)],
@@ -716,12 +1032,37 @@ pub fn library(n: &dyn Fn(&str) -> String) -> Vec<(String, String, ComponentDef)
                 true,
             ),
         ],
+        ..Default::default()
     };
     out.push((n("tpl-comp-sofa"), n("tpl-type-sofa"), sofa));
 
     // Toilet: bowl in front of the tank, against the wall at the back.
+    let connector =
+        |name: String, system: crate::SystemKind, at: [String; 3], direction, diameter: &str| ComponentConnector {
+            name,
+            system,
+            x: at[0].clone(),
+            y: at[1].clone(),
+            z: at[2].clone(),
+            direction,
+            diameter: diameter.to_string(),
+        };
+    use crate::SystemKind as K;
+    use ConnectorDirection as D;
     let toilet = ComponentDef {
         kind: ComponentKind::Plumbing,
+        opening: None,
+        // The outlet 30 cm from the wall under the bowl; the inlet at the back, beside the tank.
+        connectors: vec![
+            connector(n("tpl-conn-sewer"), K::Sanitary, [s("0"), format!("{d} / 2 - 0.3"), s("0")], D::Down, "0.1"),
+            connector(
+                n("tpl-conn-cold-water"),
+                K::ColdWater,
+                [s("-0.15"), format!("{d} / 2"), s("0.2")],
+                D::Back,
+                "0.02",
+            ),
+        ],
         ifc: None,
         // Toilet with a close-coupled tank.
         mep: Some(MepData::Fixture { drain_units: 6.0, supply_weight: 0.3, hot_water: false }),
@@ -739,6 +1080,7 @@ pub fn library(n: &dyn Fn(&str) -> String) -> Vec<(String, String, ComponentDef)
                 material: porcelain.clone(),
                 in_plan: true,
                 void: false,
+                plan_only: false,
             },
             bx(
                 &n("tpl-part-tank"),
@@ -752,12 +1094,26 @@ pub fn library(n: &dyn Fn(&str) -> String) -> Vec<(String, String, ComponentDef)
                 true,
             ),
         ],
+        ..Default::default()
     };
     out.push((n("tpl-comp-toilet"), n("tpl-type-toilet"), toilet));
 
     // Washbasin: basin slab on a pedestal.
     let basin = ComponentDef {
         kind: ComponentKind::Plumbing,
+        opening: None,
+        // Waste behind the pedestal, cold and hot water at the wall above it.
+        connectors: vec![
+            connector(n("tpl-conn-sewer"), K::Sanitary, [s("0"), format!("{d} / 2 - 0.05"), s("0.5")], D::Down, "0.04"),
+            connector(
+                n("tpl-conn-cold-water"),
+                K::ColdWater,
+                [s("-0.1"), format!("{d} / 2"), s("0.6")],
+                D::Back,
+                "0.02",
+            ),
+            connector(n("tpl-conn-hot-water"), K::HotWater, [s("0.1"), format!("{d} / 2"), s("0.6")], D::Back, "0.02"),
+        ],
         ifc: None,
         mep: Some(MepData::Fixture { drain_units: 1.0, supply_weight: 0.3, hot_water: true }),
         params: vec![length(&w, 0.55), length(&d, 0.45), length(&h, 0.85)],
@@ -785,14 +1141,18 @@ pub fn library(n: &dyn Fn(&str) -> String) -> Vec<(String, String, ComponentDef)
                 material: porcelain.clone(),
                 in_plan: false,
                 void: false,
+                plan_only: false,
             },
         ],
+        ..Default::default()
     };
     out.push((n("tpl-comp-washbasin"), n("tpl-type-washbasin"), basin));
 
     // Wardrobe: one box.
     let wardrobe = ComponentDef {
         kind: ComponentKind::Casework,
+        opening: None,
+        connectors: Vec::new(),
         ifc: None,
         mep: None,
         params: vec![length(&w, 1.6), length(&d, 0.6), length(&h, 2.2)],
@@ -807,6 +1167,7 @@ pub fn library(n: &dyn Fn(&str) -> String) -> Vec<(String, String, ComponentDef)
             &wood,
             true,
         )],
+        ..Default::default()
     };
     out.push((n("tpl-comp-wardrobe"), n("tpl-type-wardrobe"), wardrobe));
     out.extend(mep_library(n));
@@ -836,6 +1197,7 @@ pub fn mep_library(n: &dyn Fn(&str) -> String) -> Vec<(String, String, Component
         material: material.to_string(),
         in_plan: true,
         void: false,
+        plan_only: false,
     };
     // A box W x D x H with its back on the X axis, standing out towards -Y.
     let wall_box = |z: &str| ComponentShape::Box {
@@ -846,9 +1208,17 @@ pub fn mep_library(n: &dyn Fn(&str) -> String) -> Vec<(String, String, Component
         depth: d.clone(),
         height: h.clone(),
     };
-    let def = |kind: ComponentKind, params: Vec<ComponentParam>, items: Vec<ComponentItem>, mep: MepData| {
-        ComponentDef { kind, params, items, ifc: None, mep: Some(mep) }
-    };
+    let def =
+        |kind: ComponentKind, params: Vec<ComponentParam>, items: Vec<ComponentItem>, mep: MepData| ComponentDef {
+            kind,
+            params,
+            items,
+            ifc: None,
+            mep: Some(mep),
+            opening: None,
+            connectors: Vec::new(),
+            ..Default::default()
+        };
     let device = |device: D, power: f64| MepData::Device { device, power };
     let body = n("tpl-part-body");
     let mut out = Vec::new();
@@ -1046,6 +1416,7 @@ mod tests {
             material: String::new(),
             in_plan: true,
             void: false,
+            plan_only: false,
         };
         let def = ComponentDef { items: vec![item.clone()], ..Default::default() };
         let (parts, errors) = def.resolve(&BTreeMap::new());

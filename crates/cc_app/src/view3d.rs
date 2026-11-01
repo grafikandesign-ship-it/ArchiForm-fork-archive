@@ -14,6 +14,8 @@ pub struct View3DState {
     renderer: Option<Renderer3D>,
     pub texture: Option<egui::TextureId>,
     mesh_key: Option<(u64, u64, u64)>,
+    /// Triangles and edges of the geometry shown, with the revision they were made at.
+    tessellation: Option<(u64, cc_render::Tessellation)>,
     /// Camera changed since it was last written back to the model.
     camera_dirty: bool,
     fit_requested: bool,
@@ -30,6 +32,10 @@ pub struct View3DState {
     /// "Zoom in region" waits for a window; the drag's start once it began.
     zoom_region: bool,
     region_start: Option<egui::Pos2>,
+    /// Where a window or crossing selection drag started.
+    select_start: Option<egui::Pos2>,
+    /// Snap points and previews of the modify tools.
+    pub(crate) picks: crate::modify3d::PickCache,
 }
 
 /// Cameras kept for "previous" and "next".
@@ -57,6 +63,7 @@ impl View3DState {
             renderer: None,
             texture: None,
             mesh_key: None,
+            tessellation: None,
             camera_dirty: false,
             fit_requested: false,
             auto_fit: None,
@@ -66,6 +73,8 @@ impl View3DState {
             last_wheel: f64::NEG_INFINITY,
             zoom_region: false,
             region_start: None,
+            select_start: None,
+            picks: Default::default(),
         }
     }
 
@@ -279,7 +288,16 @@ pub fn show(ui: &mut Ui, state: &mut AppState, view_id: ViewId, render_state: Op
     if resp.dragged() {
         v3.anim = None;
     }
-    if resp.drag_started() && !zooming {
+    // A selection box: a left drag with the Select tool, or Shift+drag, as the preference says.
+    let shift = ui.input(|i| i.modifiers.shift);
+    if resp.drag_started_by(PointerButton::Primary)
+        && !zooming
+        && state.tool == crate::tools::Tool::Select
+        && state.prefs.select_drag_3d != shift
+    {
+        v3.select_start = ui.input(|i| i.pointer.press_origin());
+    }
+    if resp.drag_started() && !zooming && v3.select_start.is_none() {
         v3.remember();
     }
     let scroll = if resp.hovered() { ui.input(|i| i.smooth_scroll_delta.y) as f64 } else { 0.0 };
@@ -294,9 +312,8 @@ pub fn show(ui: &mut Ui, state: &mut AppState, view_id: ViewId, render_state: Op
     }
     let cam = &mut v3.camera;
     let d = resp.drag_delta();
-    let shift = ui.input(|i| i.modifiers.shift);
-    if zooming {
-        // The window drag is not an orbit.
+    if zooming || v3.select_start.is_some() {
+        // The zoom window and the selection box are not an orbit.
     } else if resp.dragged_by(PointerButton::Primary) || (shift && resp.dragged_by(PointerButton::Middle)) {
         cam.yaw_deg += d.x as f64 * 0.4;
         cam.pitch_deg = (cam.pitch_deg + d.y as f64 * 0.4).clamp(-89.0, 89.0);
@@ -320,8 +337,12 @@ pub fn show(ui: &mut Ui, state: &mut AppState, view_id: ViewId, render_state: Op
 
     // Picking (the Demolish tool takes the clicked element instead, once the view state is released).
     let mut demolish_pick = None;
+    let mut opening_pick = None;
+    // The modify tools that work in 3D take the clicks themselves (see `modify3d`).
+    let modifying = crate::modify3d::works_in_3d(&state.tool);
     if resp.clicked()
         && !zooming
+        && !modifying
         && let Some(pos) = resp.interact_pointer_pos()
     {
         let nx = (pos.x - rect.left()) / rect.width() * 2.0 - 1.0;
@@ -337,8 +358,14 @@ pub fn show(ui: &mut Ui, state: &mut AppState, view_id: ViewId, render_state: Op
             None => geom.pick(ray, &[]),
         };
         let demolishing = state.tool == crate::tools::Tool::Demolish;
+        let placing = matches!(state.tool, crate::tools::Tool::Hosted { .. });
         match picked {
             _ if demolishing => demolish_pick = Some(picked.map(|(id, _)| id)),
+            Some((id, t)) if placing && project.element(id).is_some_and(|e| e.as_wall().is_some()) => {
+                let hit = ray.origin + ray.dir * t;
+                opening_pick = Some((id, glam::DVec2::new(hit.x, hit.y)));
+            }
+            _ if placing => state.message = crate::t!("hint-hosted"),
             Some((id, _)) if ctrl => {
                 if !state.selection.remove(&id) {
                     state.selection.insert(id);
@@ -350,25 +377,31 @@ pub fn show(ui: &mut Ui, state: &mut AppState, view_id: ViewId, render_state: Op
         }
     }
 
-    // Upload geometry when the model or selection changed.
-    let key = (state.session.doc.revision(), selection_hash(&state.selection), state.session.temporary_revision());
+    // Upload geometry when the model or selection changed; a new selection
+    // or temporary visibility only repaints the triangles and edges kept.
+    let revision = state.session.doc.revision();
+    let key = (revision, selection_hash(&state.selection), state.session.temporary_revision());
     let renderer = v3.renderer.get_or_insert_with(|| Renderer3D::new(&rs.device));
     if v3.mesh_key != Some(key) {
         let geom = state.session.geom_for(view_id);
+        if v3.tessellation.as_ref().is_none_or(|(r, _)| *r != revision) {
+            v3.tessellation = Some((revision, cc_render::Tessellation::new(geom)));
+        }
+        let Some((_, tess)) = &v3.tessellation else { return };
         let mesh = if analytical {
             let model = cc_geom::analytical::analytical_model(&state.session.doc.project, geom);
-            SceneMesh::build_analytical(geom, &model, &state.selection)
+            SceneMesh::build_analytical(tess, &model, &state.selection)
         } else if rebar {
-            SceneMesh::build_rebar(geom, &state.selection)
+            SceneMesh::build_rebar(geom, tess, &state.selection)
         } else {
             let project = &state.session.doc.project;
             match project.view(view_id) {
                 Some(view) => {
                     let temporary = state.session.temporary(view_id);
                     let mut resolver = cc_views::graphics::Resolver::new(project, geom, view, temporary);
-                    SceneMesh::build(geom, &state.selection, &mut |e| resolver.style(e).map(|g| solid_style(&g)))
+                    SceneMesh::build(tess, &state.selection, &mut |e| resolver.style(e).map(|g| solid_style(&g)))
                 }
-                None => SceneMesh::build_plain(geom, &state.selection),
+                None => SceneMesh::build_plain(tess, &state.selection),
             }
         };
         renderer.upload(&rs.device, &mesh);
@@ -396,6 +429,33 @@ pub fn show(ui: &mut Ui, state: &mut AppState, view_id: ViewId, render_state: Op
     if let Some(tex) = v3.texture {
         let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
         painter.image(tex, rect, uv, egui::Color32::WHITE);
+    }
+    if let Some(start) = v3.select_start {
+        let cur = resp.interact_pointer_pos().or(resp.hover_pos()).unwrap_or(start);
+        crate::tools::select_box(&painter, start, cur);
+        if resp.drag_stopped() {
+            v3.select_start = None;
+            let ndc = |p: egui::Pos2| {
+                let x = (p.x - rect.left()) / rect.width().max(1.0) * 2.0 - 1.0;
+                let y = 1.0 - (p.y - rect.top()) / rect.height().max(1.0) * 2.0;
+                glam::DVec2::new(x as f64, y as f64)
+            };
+            let (a, b, window) = (ndc(start), ndc(cur), cur.x >= start.x);
+            let (project, temporary) = (&state.session.doc.project, state.session.temporary(view_id));
+            let geom = state.session.geom_for(view_id);
+            let ids = match project.view(view_id) {
+                Some(view) => {
+                    let mut resolver = cc_views::graphics::Resolver::new(project, geom, view, temporary);
+                    let mut shown = |e| resolver.style(e).is_some();
+                    cc_render::elements_in_rect(&geom.solids, &v3.camera, aspect, a, b, window, &mut shown)
+                }
+                None => cc_render::elements_in_rect(&geom.solids, &v3.camera, aspect, a, b, window, &mut |_| true),
+            };
+            if !ui.input(|i| i.modifiers.command) {
+                state.selection.clear();
+            }
+            state.selection.extend(ids);
+        }
     }
     let cube = crate::view_cube::show(ui, rect, &v3.camera);
     if cube.look_from.is_some() || cube.home {
@@ -425,6 +485,14 @@ pub fn show(ui: &mut Ui, state: &mut AppState, view_id: ViewId, render_state: Op
     }
 
     let nav = v3.nav();
+    let camera_now = v3.camera;
+    if modifying && !zooming {
+        crate::modify3d::handle(ui, &resp, &painter, state, view_id, crate::modify3d::Frame::new(rect, camera_now));
+    }
+    if let Some((wall, point)) = opening_pick {
+        let tool = state.tool.clone();
+        crate::tools::place_opening_3d(state, &tool, wall, point);
+    }
     if let Some(picked) = demolish_pick {
         let ids = crate::phases_dialog::demolishable(state, view_id, picked);
         crate::phases_dialog::demolish(state, view_id, &ids);
@@ -445,11 +513,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, view_id: ViewId, render_state: Op
     if v3.camera_dirty && !interacting {
         v3.camera_dirty = false;
         let camera = v3.camera;
-        state.session.doc.set_untracked(|p| {
-            if let Some(ViewKind::ThreeD { camera: c, .. }) = p.views.get_mut(&view_id).map(|v| &mut v.kind) {
-                *c = camera;
-            }
-        });
+        state.session.set_view_camera(view_id, camera);
     }
 }
 

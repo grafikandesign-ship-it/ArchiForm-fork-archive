@@ -2,7 +2,7 @@
 //! the materials it uses, to share components between projects.
 
 use crate::component::ComponentDef;
-use crate::{Category, ElementType, ElementTypeId, Material, Project, TypeData, TypeInfo, expr};
+use crate::{ElementType, ElementTypeId, Material, Project, TypeData, TypeInfo, expr};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -59,7 +59,7 @@ pub enum ComponentFileError {
 /// Collect the component named `component` from `project`.
 pub fn extract(project: &Project, component: &str) -> Result<ComponentFile, ComponentFileError> {
     let types: Vec<(&ElementType, &ComponentDef)> = project
-        .types_of(Category::Component)
+        .component_types()
         .filter_map(|t| match &t.data {
             TypeData::Component { component: c, def } if c == component => Some((t, def)),
             _ => None,
@@ -138,6 +138,19 @@ fn validate(file: &ComponentFile) -> Result<(), ComponentFileError> {
             return bad("invalid type");
         }
     }
+    if def.ref_planes.len() + def.ref_lines.len() + def.dimensions.len() + def.equals.len()
+        > crate::component_ref::MAX_REFS
+    {
+        return bad("too many reference planes, lines and dimensions");
+    }
+    let names = def.ref_planes.iter().map(|p| &p.name).chain(def.ref_lines.iter().map(|l| &l.name));
+    let mut seen: Vec<&str> = def.params.iter().map(|p| p.name.as_str()).collect();
+    for name in names {
+        if !expr::is_valid_name(name) || crate::component_ref::is_reserved(name) || seen.contains(&name.as_str()) {
+            return bad(&format!("invalid or repeated reference name '{name}'"));
+        }
+        seen.push(name);
+    }
     Ok(())
 }
 
@@ -153,6 +166,48 @@ pub fn load(path: &Path) -> Result<ComponentFile, ComponentFileError> {
     from_ron(&std::fs::read_to_string(path)?)
 }
 
+/// Most component files a library scan reads.
+pub const MAX_LIBRARY_FILES: usize = 5000;
+/// Deepest subfolder a library scan enters.
+const MAX_LIBRARY_DEPTH: usize = 8;
+
+/// The component files (`.ccomp`) in `folders` and their subfolders, sorted
+/// by path: the ones that load, and the paths of those that do not, with
+/// why. Bounded in depth and number of files; links to folders are not followed.
+#[allow(clippy::type_complexity)]
+pub fn scan(
+    folders: &[std::path::PathBuf],
+) -> (Vec<(std::path::PathBuf, ComponentFile)>, Vec<(std::path::PathBuf, String)>) {
+    let mut paths = Vec::new();
+    let mut pending: Vec<(std::path::PathBuf, usize)> = folders.iter().map(|f| (f.clone(), 0)).collect();
+    while let Some((dir, depth)) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else { continue };
+            let path = entry.path();
+            if kind.is_dir() && depth < MAX_LIBRARY_DEPTH {
+                pending.push((path, depth + 1));
+            } else if kind.is_file()
+                && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("ccomp"))
+                && paths.len() < MAX_LIBRARY_FILES
+            {
+                paths.push(path);
+            }
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    let mut loaded = Vec::new();
+    let mut failed = Vec::new();
+    for path in paths {
+        match load(&path) {
+            Ok(file) => loaded.push((path, file)),
+            Err(e) => failed.push((path, e.to_string())),
+        }
+    }
+    (loaded, failed)
+}
+
 /// Types to add to `project` for `file`: the component and type names are
 /// made unique and missing materials are listed. Ids are allocated from
 /// `alloc`, so callers can add them inside a transaction.
@@ -162,7 +217,7 @@ pub fn types_for(
     mut alloc: impl FnMut() -> u64,
 ) -> (Vec<ElementType>, Vec<Material>) {
     let components: Vec<&str> = project
-        .types_of(Category::Component)
+        .component_types()
         .filter_map(|t| match &t.data {
             TypeData::Component { component, .. } => Some(component.as_str()),
             _ => None,
@@ -178,7 +233,7 @@ pub fn types_for(
         name
     };
     let component = unique(&file.component, &|n| components.contains(&n));
-    let mut names: Vec<String> = project.types_of(Category::Component).map(|t| t.name.clone()).collect();
+    let mut names: Vec<String> = project.component_types().map(|t| t.name.clone()).collect();
     let mut types = Vec::new();
     for t in &file.types {
         let name = unique(&t.name, &|n| names.iter().any(|x| x == n));
@@ -206,6 +261,7 @@ pub fn types_for(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Category;
 
     fn table_component(p: &Project) -> String {
         p.types_of(Category::Component)

@@ -62,8 +62,12 @@ pub fn contains(poly: &[DVec2], pt: DVec2) -> bool {
     inside
 }
 
-/// Triangulate a simple polygon; returns index triples.
+/// Triangulate a simple polygon; returns index triples (none when a point
+/// is not finite: earcutr panics on such input).
 pub fn triangulate(poly: &[DVec2]) -> Vec<[usize; 3]> {
+    if poly.iter().any(|p| !p.is_finite()) {
+        return Vec::new();
+    }
     match poly.len() {
         0..=2 => vec![],
         3 => vec![[0, 1, 2]],
@@ -140,12 +144,55 @@ pub fn line_intersect(p1: DVec2, d1: DVec2, p2: DVec2, d2: DVec2) -> Option<f64>
     Some((p2 - p1).perp_dot(d2) / denom)
 }
 
+/// Whether segment `a`–`b` passes through the rectangle `lo`..`hi`
+/// (Liang–Barsky clipping; touching counts).
+pub fn segment_meets_rect(a: DVec2, b: DVec2, lo: DVec2, hi: DVec2) -> bool {
+    let d = b - a;
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    for (p, q) in [(-d.x, a.x - lo.x), (d.x, hi.x - a.x), (-d.y, a.y - lo.y), (d.y, hi.y - a.y)] {
+        if p == 0.0 {
+            if q < 0.0 {
+                return false;
+            }
+        } else {
+            let r = q / p;
+            if p < 0.0 {
+                t0 = t0.max(r);
+            } else {
+                t1 = t1.min(r);
+            }
+            if t0 > t1 {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn square() -> Vec<DVec2> {
         vec![DVec2::new(0.0, 0.0), DVec2::new(4.0, 0.0), DVec2::new(4.0, 4.0), DVec2::new(0.0, 4.0)]
+    }
+
+    /// Regression: earcutr panics on non-finite coordinates, and the 3D view
+    /// triangulates every face each time the model changes (issue #51).
+    #[test]
+    fn triangulating_non_finite_points_gives_nothing() {
+        let n = f64::NAN;
+        let mut bad = vec![
+            DVec2::new(0.0, 0.0),
+            DVec2::new(1.0, n),
+            DVec2::new(1.0, 1.0),
+            DVec2::new(0.0, 1.0),
+            DVec2::new(0.5, 2.0),
+        ];
+        assert!(triangulate(&bad).is_empty());
+        bad[1] = DVec2::new(f64::INFINITY, 0.0);
+        assert!(triangulate(&bad).is_empty());
+        assert!(triangulate(&[DVec2::new(n, n); 6]).is_empty());
     }
 
     #[test]

@@ -6,13 +6,15 @@ use crate::refs::{self, Ref};
 use crate::registry::{Command, CommandKind};
 use crate::session::Session;
 use crate::t;
+use cc_core::roofing::FramingSystem;
 use cc_core::{ComponentDef, ElementType, ElementTypeId, TypeData, expr};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-/// Parameter names valid and unique, at least one piece, every piece resolves.
-fn validate(def: &ComponentDef) -> Result<()> {
+/// Parameter names valid and unique, sound reference planes, lines and
+/// dimensions, at least one piece, every piece resolves.
+pub(crate) fn validate(def: &ComponentDef) -> Result<()> {
     for (i, p) in def.params.iter().enumerate() {
         if !expr::is_valid_name(&p.name) {
             return Err(EngineError::invalid(format!("invalid parameter name '{}'", p.name)));
@@ -24,7 +26,19 @@ fn validate(def: &ComponentDef) -> Result<()> {
     if def.items.is_empty() {
         return Err(EngineError::invalid("the component has no pieces"));
     }
-    let (_, errors) = def.resolve(&Default::default());
+    if let Some(problem) = def.ref_problems().into_iter().next() {
+        return Err(EngineError::invalid(problem));
+    }
+    // Doors and windows are checked in a wall 15 cm thick, and need their opening.
+    if matches!(def.kind, cc_core::ComponentKind::Door | cc_core::ComponentKind::Window) && def.opening_size().is_none()
+    {
+        return Err(EngineError::invalid("a door or window needs an opening with a positive width and height"));
+    }
+    let resolved = def.resolve_connectors(&Default::default());
+    if let Some(c) = def.connectors.iter().enumerate().find(|(i, _)| !resolved.iter().any(|k| k.index == *i)) {
+        return Err(EngineError::invalid(format!("connector '{}': invalid position or diameter", c.1.name)));
+    }
+    let (_, errors) = def.resolve_in(&Default::default(), &[(cc_core::component::WALL_THICKNESS, 0.15)]);
     if let Some((i, e)) = errors.first() {
         let piece = def.items.get(*i).map_or(String::new(), |it| it.name.clone());
         return Err(EngineError::invalid(format!("piece '{piece}': {e}")));
@@ -73,7 +87,18 @@ impl Command for TypeSet {
         {
             return Err(EngineError::invalid(format!("the name '{name}' is empty or already used")));
         }
-        let data = self.params.as_ref().map(|patch| patch_variant(&ty.data, patch)).transpose()?;
+        let mut data = self.params.as_ref().map(|patch| patch_variant(&ty.data, patch)).transpose()?;
+        // A new roof covering brings the framing it usually lies on, if none was chosen.
+        if let (
+            Some(TypeData::Roof { covering: Some(kind), framing, .. }),
+            TypeData::Roof { covering: old, framing: was, .. },
+        ) = (&mut data, &ty.data)
+            && Some(*kind) != *old
+            && framing.system == FramingSystem::None
+            && was.system == FramingSystem::None
+        {
+            framing.system = kind.spec().framing;
+        }
         if data.as_ref().is_some_and(|d| std::mem::discriminant(d) != std::mem::discriminant(&ty.data)) {
             return Err(EngineError::invalid("params cannot change the type's category"));
         }
@@ -233,7 +258,18 @@ impl Command for TypeDelete {
 /// arc, positive bulging outwards) or a `Revolution` {plane, points, offset, axis, angle}
 /// (the profile turned about the line u = axis of its plane). Every field
 /// is an expression over the parameters (meters, degrees). A piece with
-/// `void: true` is cut out of the solid pieces it overlaps.
+/// `void: true` is cut out of the solid pieces it overlaps; one with
+/// `plan_only: true` is a plan symbol (a door's swing), drawn in plans and
+/// not a solid. A `kind` of
+/// `Door` or `Window` with an `opening` {width, height, sill, own_symbol}
+/// (expressions) makes a door or window type, placed with `door_create` or
+/// `window_create`: it cuts that opening in its wall; its frame has x along
+/// the wall from the opening's center, y across it (towards the side a door
+/// opens to), z up from the sill, and `WallThickness` is the wall's thickness.
+/// `connectors` [{name, system: `ColdWater`, `HotWater`, `Sanitary`, `Vent`,
+/// `Rainwater`, `Power` or `Lighting`, x, y, z, direction: `Down`, `Up`,
+/// `Front` (-y), `Back` (+y), `Left` (-x) or `Right` (+x), diameter}] are
+/// where `mep_connect` joins pipes and conduits (a toilet's inlet and outlet).
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ComponentCreate {

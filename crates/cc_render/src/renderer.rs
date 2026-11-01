@@ -43,6 +43,9 @@ pub struct Renderer3D {
     bind_group: wgpu::BindGroup,
     buffers: Option<Buffers>,
     targets: Option<Targets>,
+    /// Camera and size of the frame in the targets, while it is current:
+    /// rendering it again is skipped.
+    drawn: Option<(CameraState, [u32; 2])>,
 }
 
 impl Renderer3D {
@@ -127,11 +130,27 @@ impl Renderer3D {
         let faces = pipeline("cc_render faces", tri, "fs_face", face_bias, None);
         let blended = pipeline("cc_render blended", tri, "fs_face", face_bias, Some(wgpu::BlendState::ALPHA_BLENDING));
         let edges = pipeline("cc_render edges", wgpu::PrimitiveTopology::LineList, "fs_edge", Default::default(), None);
-        Self { faces, blended, edges, uniforms, bind_group, buffers: None, targets: None }
+        Self { faces, blended, edges, uniforms, bind_group, buffers: None, targets: None, drawn: None }
     }
 
     pub fn upload(&mut self, device: &wgpu::Device, mesh: &SceneMesh) {
-        if mesh.indices.is_empty() && mesh.edges.is_empty() {
+        self.drawn = None;
+        if mesh.indices.is_empty() && mesh.transparent_indices.is_empty() && mesh.edges.is_empty() {
+            self.buffers = None;
+            return;
+        }
+        // A buffer beyond the device's limit is a validation error, which
+        // wgpu treats as fatal: draw nothing rather than abort the app.
+        let largest = [
+            std::mem::size_of_val(mesh.vertices.as_slice()),
+            std::mem::size_of_val(mesh.edges.as_slice()),
+            std::mem::size_of_val(mesh.indices.as_slice()),
+            std::mem::size_of_val(mesh.transparent_indices.as_slice()),
+        ]
+        .into_iter()
+        .max()
+        .unwrap_or(0);
+        if !fits(largest, device.limits().max_buffer_size) {
             self.buffers = None;
             return;
         }
@@ -196,8 +215,10 @@ impl Renderer3D {
         }
     }
 
-    /// Render a frame. Returns the output view and whether it was recreated
-    /// (callers must then re-register it with egui); `None` if there are no targets.
+    /// Render a frame (unless the last one, with the same mesh, camera and
+    /// size, is still in the targets). Returns the output view and whether it
+    /// was recreated (callers must then re-register it with egui); `None` if
+    /// there are no targets.
     pub fn render(
         &mut self,
         device: &wgpu::Device,
@@ -207,6 +228,10 @@ impl Renderer3D {
     ) -> Option<(&wgpu::TextureView, bool)> {
         let size = [size[0].clamp(1, 8192), size[1].clamp(1, 8192)];
         let recreated = self.ensure_targets(device, size);
+        if !recreated && self.drawn == Some((*camera, size)) {
+            return self.targets.as_ref().map(|t| (&t.resolve, false));
+        }
+        self.drawn = Some((*camera, size));
         let aspect = size[0] as f32 / size[1] as f32;
         let fwd = camera.forward().as_vec3();
         // Sun from behind the viewer's left shoulder, high up.
@@ -315,5 +340,23 @@ impl Renderer3D {
         drop(data);
         buffer.unmap();
         Some(rgba)
+    }
+}
+
+/// Whether a buffer of `bytes` is within the device's `limit`, and its
+/// element counts fit the `u32` draw ranges.
+fn fits(bytes: usize, limit: u64) -> bool {
+    u64::try_from(bytes).is_ok_and(|b| b <= limit) && bytes / std::mem::size_of::<u32>() <= u32::MAX as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn meshes_beyond_the_buffer_limit_are_not_uploaded() {
+        let limit = wgpu::Limits::default().max_buffer_size;
+        assert!(fits(0, limit) && fits(1 << 20, limit));
+        assert!(!fits(usize::try_from(limit).unwrap_or(usize::MAX).saturating_add(1), limit));
     }
 }

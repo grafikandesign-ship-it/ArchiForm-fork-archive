@@ -18,6 +18,43 @@ pub const HIGHLIGHT_ONLY: [u8; 4] = [255, 255, 255, 0];
 /// Nearly invisible fill that makes text tags clickable.
 const PICK_AREA: [u8; 4] = [255, 255, 255, 1];
 
+/// Tags a view moved by hand: offsets in plan by the element they tag.
+pub type TagOffsets = std::collections::BTreeMap<cc_core::ElementId, DVec2>;
+
+/// Where a tag sits once the view's offset for `id` moves it from its
+/// default spot: its box (center and half size, the default box moved) is
+/// recorded so it can be dragged, and a tag moved away from the element gets
+/// a leader from `anchor` (the point of the element it names) to its edge.
+/// Returns the offset to add to what the tag draws.
+fn place_tag(
+    d: &mut Drawing2D,
+    offsets: &TagOffsets,
+    id: cc_core::ElementId,
+    center: DVec2,
+    half: DVec2,
+    anchor: DVec2,
+) -> DVec2 {
+    let offset = offsets.get(&id).copied().filter(|o| o.is_finite()).unwrap_or(DVec2::ZERO);
+    let center = center + offset;
+    d.tags.push(crate::TagHandle { element: id, center, half, offset });
+    if offset.length() > 1e-9 && !(anchor - center).abs().cmple(half).all() {
+        // The leader stops at the edge of the tag's box.
+        let dir = (anchor - center).normalize_or_zero();
+        let tx = if dir.x.abs() > 1e-12 { half.x / dir.x.abs() } else { f64::INFINITY };
+        let ty = if dir.y.abs() > 1e-12 { half.y / dir.y.abs() } else { f64::INFINITY };
+        d.line(anchor, center + dir * tx.min(ty), LineStyle::Annotation, Some(id));
+    }
+    offset
+}
+
+/// Half size, in plan, of a single line of `text` `size` paper millimeters
+/// high, turned `angle` radians (its bounding box).
+fn text_half(text: &str, size: f64, angle: f64, mm: f64) -> DVec2 {
+    let (w, h) = (text.chars().count().max(1) as f64 * size * 0.6 * mm / 2.0, size * mm / 2.0);
+    let (s, c) = angle.sin_cos();
+    DVec2::new((w * c).abs() + (h * s).abs(), (w * s).abs() + (h * c).abs())
+}
+
 /// Tags of rooms and openings, and grids, for a floor or ceiling plan of `level`.
 pub fn plan_annotations(
     d: &mut Drawing2D,
@@ -26,9 +63,9 @@ pub fn plan_annotations(
     level: LevelId,
     ceiling: bool,
     structural: bool,
-    scale: u32,
+    view: &cc_core::View,
 ) {
-    let mm = mm(scale);
+    let (mm, offsets) = (mm(view.scale), &view.tag_offsets);
     for e in project.elements.values() {
         match &e.kind {
             ElementKind::Room(room) if e.level == level && !structural => {
@@ -55,17 +92,21 @@ pub fn plan_annotations(
         }
     }
     if !ceiling && !structural {
-        opening_tags(d, project, geom, level, mm);
+        opening_tags(d, project, geom, level, mm, offsets);
     }
 }
 
-/// A length in centimeters, without decimals when whole.
+/// A section size: centimeters, without decimals when whole, or inches
+/// with a fraction in imperial units.
 fn cm(meters: f64) -> String {
+    if format::imperial() {
+        return format::inches(meters);
+    }
     let v = meters * 100.0;
     if (v - v.round()).abs() < 1e-6 { format!("{v:.0}") } else { format!("{v:.1}") }
 }
 
-/// A section's size in centimeters: `15×40`, `Ø30`.
+/// A section's size in centimeters (inches in imperial units): `15×40`, `Ø30`.
 pub fn section_label(data: &TypeData) -> Option<String> {
     use cc_core::ColumnSection as C;
     Some(match data {
@@ -87,7 +128,14 @@ pub fn section_label(data: &TypeData) -> Option<String> {
 /// Tags of the beams, columns and pad footings of `level`: their mark and
 /// section (`V1 15×40`). Beam tags run along the beam, beside it; column
 /// and footing tags sit above and to the right.
-pub fn structure_tags(d: &mut Drawing2D, project: &Project, geom: &ModelGeometry, level: LevelId, scale: u32) {
+pub fn structure_tags(
+    d: &mut Drawing2D,
+    project: &Project,
+    geom: &ModelGeometry,
+    level: LevelId,
+    scale: u32,
+    offsets: &TagOffsets,
+) {
     let mm = mm(scale);
     for e in project.elements.values().filter(|e| e.level == level) {
         let Some(section) = project.element_type(e.type_id).and_then(|t| section_label(&t.data)) else { continue };
@@ -103,7 +151,11 @@ pub fn structure_tags(d: &mut Drawing2D, project: &Project, geom: &ModelGeometry
                 }
                 let up = dir.perp();
                 let p = g.world(u, 0.0) + up * (g.half + 1.0 * mm);
-                d.tag_text(p, &text, 2.5, Anchor::CenterBottom, dir.y.atan2(dir.x), Some(e.id));
+                let angle = dir.y.atan2(dir.x);
+                let center = p + up * (1.25 * mm);
+                let half = text_half(&text, 2.5, angle, mm);
+                let offset = place_tag(d, offsets, e.id, center, half, g.world(u, 0.0));
+                d.tag_text(p + offset, &text, 2.5, Anchor::CenterBottom, angle, Some(e.id));
             }
             ElementKind::Column(c) if c.structural => {
                 let Some(TypeData::Column { section, .. }) = project.element_type(e.type_id).map(|t| &t.data) else {
@@ -111,13 +163,19 @@ pub fn structure_tags(d: &mut Drawing2D, project: &Project, geom: &ModelGeometry
                 };
                 let outline = cc_geom::column_outline(*section, c.position, c.rotation_deg);
                 let hi = outline.iter().fold(DVec2::splat(f64::NEG_INFINITY), |a, p| a.max(*p));
-                d.tag_text(hi + DVec2::splat(1.0 * mm), &text, 2.5, Anchor::LeftBottom, 0.0, Some(e.id));
+                let p = hi + DVec2::splat(1.0 * mm);
+                let half = text_half(&text, 2.5, 0.0, mm);
+                let offset = place_tag(d, offsets, e.id, p + half, half, c.position);
+                d.tag_text(p + offset, &text, 2.5, Anchor::LeftBottom, 0.0, Some(e.id));
             }
             ElementKind::Foundation(_) => {
                 let Some(g) = geom.foundations.get(&e.id) else { continue };
                 let lo = g.footprint.iter().fold(DVec2::splat(f64::INFINITY), |a, p| a.min(*p));
                 let hi = g.footprint.iter().fold(DVec2::splat(f64::NEG_INFINITY), |a, p| a.max(*p));
-                d.tag_text(DVec2::new(hi.x + mm, lo.y), &text, 2.5, Anchor::LeftBottom, 0.0, Some(e.id));
+                let p = DVec2::new(hi.x + mm, lo.y);
+                let half = text_half(&text, 2.5, 0.0, mm);
+                let offset = place_tag(d, offsets, e.id, p + half, half, (lo + hi) * 0.5);
+                d.tag_text(p + offset, &text, 2.5, Anchor::LeftBottom, 0.0, Some(e.id));
             }
             _ => {}
         }
@@ -149,7 +207,14 @@ fn grid_line(d: &mut Drawing2D, start: DVec2, end: DVec2, name: &str, bubble_mm:
     d.tag_text(center, name, bubble_mm * 0.45, Anchor::Center, 0.0, Some(id));
 }
 
-fn opening_tags(d: &mut Drawing2D, project: &Project, geom: &ModelGeometry, level: LevelId, mm: f64) {
+fn opening_tags(
+    d: &mut Drawing2D,
+    project: &Project,
+    geom: &ModelGeometry,
+    level: LevelId,
+    mm: f64,
+    offsets: &TagOffsets,
+) {
     for wall in geom.walls.values() {
         if project.element(wall.element).is_none_or(|e| e.level != level) {
             continue;
@@ -166,6 +231,7 @@ fn opening_tags(d: &mut Drawing2D, project: &Project, geom: &ModelGeometry, leve
             let u = (o.u0 + o.u1) / 2.0;
             let r = 2.6 * mm;
             let c = wall.world(u, side * (wall.half + r + 2.0 * mm));
+            let c = c + place_tag(d, offsets, e.id, c, DVec2::splat(r), wall.world(u, side * wall.half));
             if door {
                 let circle: Vec<DVec2> =
                     (0..24).map(|i| c + DVec2::from_angle(i as f64 / 24.0 * std::f64::consts::TAU) * r).collect();
@@ -242,6 +308,43 @@ pub fn dimension_layout(dim: &Dimension, scale: u32) -> Option<DimensionLayout> 
             }
             let (angle, up) = upright(u);
             (format::meters(dim.value()), (pa + pb) / 2.0 + up * 0.8 * mm, angle)
+        }
+        DimensionKind::Ordinate { .. } => {
+            let dir = dim.direction()?;
+            let n = dir.perp();
+            let measured = (dim.b - dim.a).dot(dir);
+            if measured.abs() < 1e-9 {
+                return None;
+            }
+            let pa = dim.a + n * dim.offset;
+            let pb = pa + dir * measured;
+            let side = if dim.offset >= 0.0 { 1.0 } else { -1.0 };
+            let mut out_b = n * side;
+            for (p, q) in [(dim.a, pa), (dim.b, pb)] {
+                let v = q - p;
+                let out = v.try_normalize().unwrap_or(n * side);
+                out_b = out;
+                let from = p + out * (1.0 * mm).min(v.length());
+                lines.push((from, q + out * 1.5 * mm, LineStyle::Annotation));
+            }
+            // The origin is a small circle; the line runs from it to an arrow at the point.
+            let r = 1.0 * mm;
+            let steps = 16;
+            let at = |i: usize| pa + DVec2::from_angle(std::f64::consts::TAU * i as f64 / steps as f64) * r;
+            for i in 0..steps {
+                lines.push((at(i), at(i + 1), LineStyle::Annotation));
+            }
+            let u = dir * measured.signum();
+            lines.push((pa + u * r, pb, LineStyle::Annotation));
+            for s in [-1.0, 1.0] {
+                lines.push((pb, pb + DVec2::from_angle(s * 0.3).rotate(-u) * 2.5 * mm, LineStyle::Annotation));
+            }
+            // The running total reads along the witness line, past the dimension line.
+            let text = format::meters(measured.abs());
+            let (angle, up) = upright(out_b);
+            let width = text.chars().count() as f64 * 0.6 * 2.5 * mm;
+            let pos = pb + out_b * (2.0 * mm + width / 2.0) - up * 1.25 * mm;
+            (text, pos, angle)
         }
         DimensionKind::Angular { vertex, .. } => {
             let (r1, r2) = ((dim.a - vertex).try_normalize()?, (dim.b - vertex).try_normalize()?);
@@ -360,5 +463,28 @@ mod tests {
         let d = Dimension { kind: DimensionKind::Diameter, ..r };
         assert!((d.value() - 4.0).abs() < 1e-12);
         assert!(dimension_layout(&d, 50).unwrap().text.starts_with('\u{d8}'));
+    }
+
+    #[test]
+    fn ordinate_dimensions_show_the_running_total_along_their_witness_line() {
+        // From the origin (0, 0) to (2.4, 0.3), the line 1 m below.
+        let d = dim((0.0, 0.0), (2.4, 0.3), -1.0, DimensionKind::Ordinate { dir: DVec2::X });
+        assert!((d.value() - 2.4).abs() < 1e-12);
+        let mm = 0.05;
+        let layout = dimension_layout(&d, 50).unwrap();
+        assert_eq!(layout.text, format::meters(2.4));
+        // The dimension line runs from the origin's circle to the point, at y = -1.
+        assert!(layout.lines.iter().any(|(a, b, _)| (a.x - mm).abs() < 1e-9
+            && (b.x - 2.4).abs() < 1e-9
+            && (a.y + 1.0).abs() < 1e-9
+            && (b.y + 1.0).abs() < 1e-9));
+        // The text reads along the point's witness line (vertical), below the dimension line.
+        assert!((layout.text_angle.abs() - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+        assert!(layout.text_pos.y < -1.0 && (layout.text_pos.x - 2.4).abs() < 0.1, "{:?}", layout.text_pos);
+        // A point at the origin measures nothing.
+        assert!(
+            dimension_layout(&dim((0.0, 0.0), (0.0, 2.0), 1.0, DimensionKind::Ordinate { dir: DVec2::X }), 50)
+                .is_none()
+        );
     }
 }

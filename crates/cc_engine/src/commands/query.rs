@@ -191,7 +191,7 @@ impl Command for ElementsList {
 /// Full description of an element: everything `element_set` can change, plus derived values.
 pub(crate) fn element_json(s: &mut Session, id: ElementId) -> Option<Value> {
     let e = s.project().element(id)?.clone();
-    let (_, params) = variant(to_json(&e.kind));
+    let params = super::cad::params(&e.kind);
     let p = s.project();
     let mut derived = serde_json::Map::new();
     match &e.kind {
@@ -213,7 +213,19 @@ pub(crate) fn element_json(s: &mut Session, id: ElementId) -> Option<Value> {
             }
         }
         ElementKind::Railing(r) => {
-            derived.insert("length".into(), json!(r.length()));
+            derived.insert("length".into(), json!(cc_geom::railing_length(p, &e, r)));
+        }
+        ElementKind::Stair(st) => {
+            if let Some(g) = cc_geom::stair_geom(p, &e, st) {
+                derived.insert("run".into(), json!(g.run()));
+                derived.insert("check".into(), json!(g.check));
+            }
+        }
+        ElementKind::Ramp(r) => {
+            if let Some(g) = cc_geom::ramp_geom(p, &e, r) {
+                derived.insert("run".into(), json!(g.run()));
+                derived.insert("check".into(), json!(g.check));
+            }
         }
         ElementKind::Pipe(seg) | ElementKind::Conduit(seg) => {
             derived.insert("length".into(), json!(seg.length()));
@@ -225,6 +237,7 @@ pub(crate) fn element_json(s: &mut Session, id: ElementId) -> Option<Value> {
                 .collect();
             derived.insert("systems".into(), json!(systems));
         }
+        ElementKind::CadImport(c) => super::cad::derived(c, &mut derived),
         ElementKind::Component(c) => {
             if let Some(mep) = p.mep_data(&e) {
                 derived.insert("mep".into(), to_json(&mep));
@@ -241,6 +254,10 @@ pub(crate) fn element_json(s: &mut Session, id: ElementId) -> Option<Value> {
     let group = p.group_of(id).map(|g| g.0);
     let level = json!({"id": e.level.0, "name": p.level_name(e.level)});
     let type_ = json!({"id": e.type_id.0, "name": p.type_name(e.type_id)});
+    let roof_type = match &e.kind {
+        ElementKind::Roof(_) => s.project().element_type(e.type_id).map(|t| t.data.clone()),
+        _ => None,
+    };
     let geom = s.geometry();
     if geom.solids_of(id).next().is_some() {
         derived.insert("volume".into(), json!(geom.volume(id)));
@@ -268,11 +285,22 @@ pub(crate) fn element_json(s: &mut Session, id: ElementId) -> Option<Value> {
     }
     if let ElementKind::Roof(r) = &e.kind {
         derived.insert("plan_area".into(), json!(cc_geom::roofs::plan_area(r)));
+        if let (Some(cc_core::TypeData::Roof { covering, framing, .. }), Some(g)) =
+            (&roof_type, geom.roof_framing.get(&id))
+        {
+            let (covering, framing, g) = (*covering, framing, g);
+            derived.insert("roofing".into(), super::roofing::roof_json(covering, framing.system, g));
+        }
     }
     if let Some(boundary) = geom.rooms.get(&id) {
         derived.insert("area".into(), json!(polygon::area(boundary)));
         derived.insert("perimeter".into(), json!(polygon::perimeter(boundary)));
         derived.insert("boundary".into(), json!(boundary.iter().map(|q| [q.x, q.y]).collect::<Vec<_>>()));
+    }
+    if let Some(g) = geom.masses.get(&id).cloned() {
+        derived.insert("volume".into(), json!(g.volume));
+        derived.insert("floor_area".into(), json!(g.floor_area()));
+        derived.insert("floors".into(), json!(super::mass::floors_json(s.project(), &g)));
     }
     Some(json!({
         "id": id.0,

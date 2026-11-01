@@ -40,7 +40,9 @@ fn element_is_valid(e: &Element) -> bool {
         ElementKind::Grid(g) => finite_points(&[g.start, g.end]),
         ElementKind::Dimension(d) => {
             let kind = match d.kind {
-                crate::DimensionKind::Linear { dir } => dir.is_finite() && dir.length() > 1e-9,
+                crate::DimensionKind::Linear { dir } | crate::DimensionKind::Ordinate { dir } => {
+                    dir.is_finite() && dir.length() > 1e-9
+                }
                 crate::DimensionKind::Angular { vertex, .. } => vertex.is_finite(),
                 _ => true,
             };
@@ -77,6 +79,9 @@ fn element_is_valid(e: &Element) -> bool {
         ElementKind::Stair(s) => {
             finite(&[s.direction_deg, s.base_offset, s.height]) && s.start.is_finite() && top_ok(s.top)
         }
+        ElementKind::Ramp(r) => {
+            finite(&[r.direction_deg, r.base_offset, r.height]) && r.start.is_finite() && top_ok(r.top)
+        }
         ElementKind::Railing(r) => r.base_offset.is_finite() && r.path.len() >= 2 && finite_points(&r.path),
         ElementKind::Component(c) => finite(&[c.rotation_deg, c.base_offset]) && c.position.is_finite(),
         ElementKind::Pipe(s) | ElementKind::Conduit(s) => {
@@ -84,6 +89,8 @@ fn element_is_valid(e: &Element) -> bool {
                 && finite_points(&[s.start, s.end])
                 && (s.plan_length() >= 1e-3 || s.rise().abs() >= 1e-3)
         }
+        ElementKind::CadImport(c) => c.is_valid(),
+        ElementKind::Mass(m) => m.is_valid(),
     }
 }
 
@@ -147,10 +154,16 @@ impl Project {
 
         for ty in self.types.values_mut() {
             match &mut ty.data {
-                TypeData::Wall { layers, .. } | TypeData::Floor { layers } | TypeData::Roof { layers } => {
+                TypeData::Wall { layers, .. } | TypeData::Floor { layers } => {
                     for layer in layers.iter_mut() {
                         repairs += usize::from(fix_positive(&mut layer.thickness, 0.01));
                     }
+                }
+                TypeData::Roof { layers, framing, .. } => {
+                    for layer in layers.iter_mut() {
+                        repairs += usize::from(fix_positive(&mut layer.thickness, 0.01));
+                    }
+                    repairs += framing.repair();
                 }
                 TypeData::Door { width, height, .. } => {
                     repairs += usize::from(fix_positive(width, 0.9)) + usize::from(fix_positive(height, 2.1));
@@ -166,7 +179,7 @@ impl Project {
                 TypeData::Grid { bubble } => repairs += usize::from(fix_positive(bubble, 8.0)),
                 TypeData::Dimension { text_size } => repairs += usize::from(fix_positive(text_size, 2.5)),
                 TypeData::Text { size, .. } => repairs += usize::from(fix_positive(size, 2.5)),
-                TypeData::Room {} => {}
+                TypeData::Room {} | TypeData::CadImport {} | TypeData::Mass { .. } => {}
                 TypeData::Column { section, .. } => match section {
                     crate::ColumnSection::Rectangular { width, depth } => {
                         repairs += usize::from(fix_positive(width, 0.2)) + usize::from(fix_positive(depth, 0.2));
@@ -199,10 +212,15 @@ impl Project {
                         + usize::from(fix_positive(length, 1.0))
                         + usize::from(fix_positive(thickness, 0.4));
                 }
-                TypeData::Stair { width, max_riser, tread, .. } => {
+                TypeData::Stair { width, max_riser, tread, build, rules, .. } => {
                     repairs += usize::from(fix_positive(width, 1.0))
                         + usize::from(fix_positive(max_riser, 0.18))
                         + usize::from(fix_positive(tread, 0.28));
+                    repairs += build.repair() + rules.repair();
+                }
+                TypeData::Ramp { width, thickness, rules, .. } => {
+                    repairs += usize::from(fix_positive(width, 1.2)) + usize::from(fix_positive(thickness, 0.15));
+                    repairs += rules.repair();
                 }
                 TypeData::Railing { height, post_spacing, .. } => {
                     repairs += usize::from(fix_positive(height, 1.1)) + usize::from(fix_positive(post_spacing, 1.2));
@@ -235,6 +253,27 @@ impl Project {
             }
         }
 
+        // Imported drawings: invalid primitives and layer references go (copied
+        // only when something is wrong, since the drawing is shared).
+        for e in self.elements.values_mut() {
+            if let ElementKind::CadImport(c) = &mut e.kind
+                && c.drawing.needs_repair()
+            {
+                repairs += std::sync::Arc::make_mut(&mut c.drawing).repair();
+            }
+        }
+
+        // Mass floors on levels that are gone.
+        let levels: std::collections::BTreeSet<_> = self.levels.iter().map(|l| l.id).collect();
+        for e in self.elements.values_mut() {
+            if let ElementKind::Mass(m) = &mut e.kind {
+                let before = m.floors.len();
+                m.floors.retain(|l| levels.contains(l));
+                m.floors.dedup();
+                repairs += before - m.floors.len();
+            }
+        }
+
         // Elements: repeat until stable, since removing a wall orphans what it hosts.
         loop {
             let invalid: Vec<_> = self
@@ -252,6 +291,7 @@ impl Project {
                             .is_some_and(|h| matches!(h.kind, ElementKind::Beam(_) | ElementKind::Column(_))),
                         ElementKind::Dimension(d) => self.view(d.view).is_some(),
                         ElementKind::Text(t) => self.view(t.view).is_some(),
+                        ElementKind::CadImport(c) => self.view(c.view).is_some(),
                         _ => true,
                     };
                     !(type_ok && level_ok && host_ok && element_is_valid(e))
@@ -280,6 +320,32 @@ impl Project {
                     *r = None;
                     repairs += 1;
                 }
+            }
+        }
+        // Stair and ramp layouts get valid sizes; railings of missing ones keep their path.
+        let stairs: std::collections::BTreeSet<_> = self
+            .elements
+            .values()
+            .filter(|e| matches!(e.kind, ElementKind::Stair(_) | ElementKind::Ramp(_)))
+            .map(|e| e.id)
+            .collect();
+        for e in self.elements.values_mut() {
+            match &mut e.kind {
+                ElementKind::Stair(s) => repairs += s.layout.repair(),
+                ElementKind::Ramp(r) => repairs += r.layout.repair(),
+                ElementKind::Railing(r) => {
+                    if r.stair.is_some_and(|h| !stairs.contains(&h.host)) {
+                        r.stair = None;
+                        repairs += 1;
+                    }
+                    if let Some(h) = &mut r.stair
+                        && !(h.inset.is_finite() && h.inset.abs() < 1.0)
+                    {
+                        h.inset = 0.05;
+                        repairs += 1;
+                    }
+                }
+                _ => {}
             }
         }
         // Pins of missing elements go.
@@ -389,6 +455,7 @@ impl Project {
                 ElementKind::Wall(w) => &mut w.top,
                 ElementKind::Column(c) => &mut c.top,
                 ElementKind::Stair(s) => &mut s.top,
+                ElementKind::Ramp(r) => &mut r.top,
                 _ => continue,
             };
             if let WallTop::Level { level, .. } = *top
@@ -482,6 +549,9 @@ impl Project {
         let exists = |id: crate::ElementId| elements.contains_key(&id);
         for view in self.views.values_mut() {
             repairs += view.graphics.repair(&self.filters, Some(&exists));
+            let tags = view.tag_offsets.len();
+            view.tag_offsets.retain(|id, o| exists(*id) && o.is_finite() && o.length() < 1e4);
+            repairs += tags - view.tag_offsets.len();
             match view.template.map(|t| self.templates.get(&t)) {
                 Some(None) => {
                     view.template = None;

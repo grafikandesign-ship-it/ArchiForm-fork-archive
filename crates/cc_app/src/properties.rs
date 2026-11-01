@@ -96,7 +96,9 @@ fn dimension_value_row(ui: &mut Ui, state: &mut AppState, id: ElementId, d: &cc_
 
 fn text_row(ui: &mut Ui, label: &str, value: String) -> (Response, String) {
     let mut text = value;
-    let r = row(ui, label, |ui| ui.text_edit_singleline(&mut text));
+    let r = row(ui, label, |ui| {
+        crate::table::live_text(ui, ("prop-text", label), &mut text, |ui, t| ui.text_edit_singleline(t))
+    });
     (r, text)
 }
 
@@ -183,6 +185,7 @@ fn element_props(ui: &mut Ui, state: &mut AppState, id: ElementId) {
     }
 
     match &el.kind {
+        ElementKind::Mass(m) => mass_props(ui, state, &el, m),
         ElementKind::Component(c) => component_props(ui, state, &el, c),
         ElementKind::Wall(w) => {
             section(ui, "constraints", t!("section-constraints"), |ui| wall_constraints(ui, state, &el, w));
@@ -249,10 +252,18 @@ fn element_props(ui: &mut Ui, state: &mut AppState, id: ElementId) {
                         h.offset = v;
                     }
                 });
-                if category == Category::Window {
-                    length_row(ui, state, &t!("prop-sill"), id, "sill", h.sill_height, |e, v| {
+                // Doors too may stand above the wall's base (a raised floor, a step).
+                let sill_label = if category == Category::Window { t!("prop-sill") } else { t!("prop-base-offset") };
+                length_row(ui, state, &sill_label, id, "sill", h.sill_height, |e, v| {
+                    if let Some(h) = e.as_hosted_mut() {
+                        h.sill_height = v.max(0.0);
+                    }
+                });
+                // The head: typing it moves the opening, keeping its height.
+                if let Some((_, height)) = state.project().element_type(el.type_id).and_then(|t| t.opening_size()) {
+                    length_row(ui, state, &t!("prop-head-height"), id, "head", h.sill_height + height, |e, v| {
                         if let Some(h) = e.as_hosted_mut() {
-                            h.sill_height = v.max(0.0);
+                            h.sill_height = (v - height).max(0.0);
                         }
                     });
                 }
@@ -395,26 +406,84 @@ fn element_props(ui: &mut Ui, state: &mut AppState, id: ElementId) {
                 });
                 top_rows(ui, state, &el, st.top, st.height);
             });
+            section(ui, "stair-layout", t!("section-stair-layout"), |ui| {
+                let mut layout = st.layout;
+                let edited = crate::stair_ui::layout_controls(ui, id.0, &mut layout, true);
+                if edited.changed {
+                    modify(state, id, "layout", |e| {
+                        if let ElementKind::Stair(s) = &mut e.kind {
+                            s.layout = layout;
+                        }
+                    });
+                }
+                if edited.done {
+                    state.session.doc.break_merge();
+                }
+            });
             if let Some(g) = cc_geom::stair_geom(state.project(), &el, st) {
-                section(ui, "dimensions", t!("section-dimensions"), |ui| {
-                    readonly_row(ui, &t!("col-risers"), g.risers.to_string());
-                    readonly_row(ui, &t!("col-riser-height"), format::length(g.riser));
-                    readonly_row(ui, &t!("col-tread"), format::length(g.tread));
-                    readonly_row(ui, &t!("col-run"), format::length(g.run()));
+                section(ui, "dimensions", t!("section-stair-check"), |ui| crate::stair_ui::check_rows(ui, &g));
+            }
+            let railings = state.project().railings_of(id).count();
+            if railings == 0 && ui.button(t!("action-stair-railings")).clicked() {
+                let command =
+                    cc_engine::commands::stair::StairRailingsAdd { id: id.0, side: None, type_ref: None, inset: None };
+                actions::run_command(state, command);
+            }
+        }
+        ElementKind::Ramp(rp) => {
+            section(ui, "constraints", t!("section-constraints"), |ui| {
+                level_row(ui, state, &el);
+                length_row(ui, state, &t!("prop-base-offset"), id, "base", rp.base_offset, |e, v| {
+                    if let ElementKind::Ramp(r) = &mut e.kind {
+                        r.base_offset = v;
+                    }
                 });
+                top_rows(ui, state, &el, rp.top, rp.height);
+            });
+            section(ui, "ramp-layout", t!("section-ramp-layout"), |ui| {
+                let mut layout = rp.layout;
+                let edited = crate::stair_ui::ramp_layout_controls(ui, id.0, &mut layout, true);
+                if edited.changed {
+                    modify(state, id, "layout", |e| {
+                        if let ElementKind::Ramp(r) = &mut e.kind {
+                            r.layout = layout;
+                        }
+                    });
+                }
+                if edited.done {
+                    state.session.doc.break_merge();
+                }
+            });
+            if let Some(g) = cc_geom::ramp_geom(state.project(), &el, rp) {
+                section(ui, "dimensions", t!("section-ramp-check"), |ui| crate::stair_ui::ramp_check_rows(ui, &g));
+            }
+            let railings = state.project().railings_of(id).count();
+            if railings == 0 && ui.button(t!("action-stair-railings")).clicked() {
+                let command =
+                    cc_engine::commands::stair::StairRailingsAdd { id: id.0, side: None, type_ref: None, inset: None };
+                actions::run_command(state, command);
             }
         }
         ElementKind::Railing(r) => {
             section(ui, "constraints", t!("section-constraints"), |ui| {
                 level_row(ui, state, &el);
-                length_row(ui, state, &t!("prop-base-offset"), id, "base", r.base_offset, |e, v| {
-                    if let ElementKind::Railing(r) = &mut e.kind {
-                        r.base_offset = v;
-                    }
-                });
+                if r.stair.is_none() {
+                    length_row(ui, state, &t!("prop-base-offset"), id, "base", r.base_offset, |e, v| {
+                        if let ElementKind::Railing(r) = &mut e.kind {
+                            r.base_offset = v;
+                        }
+                    });
+                } else if let Some(h) = r.stair {
+                    // The host's category and mark, e.g. "Ramp R1".
+                    let host = state.project().element(h.host).map(|e| (e.category(), e.mark.clone()));
+                    let text =
+                        host.map_or(String::new(), |(c, mark)| format!("{} {mark}", tr(c.key())).trim().to_string());
+                    readonly_row(ui, &t!("prop-railing-host"), text);
+                }
             });
             section(ui, "dimensions", t!("section-dimensions"), |ui| {
-                readonly_row(ui, &t!("prop-length"), format::length(r.length()));
+                let length = cc_geom::railing_length(state.project(), &el, r);
+                readonly_row(ui, &t!("prop-length"), format::length(length));
             });
         }
         ElementKind::Grid(g) => {
@@ -434,6 +503,7 @@ fn element_props(ui: &mut Ui, state: &mut AppState, id: ElementId) {
             });
         }
         ElementKind::Text(note) => text_props(ui, state, id, note),
+        ElementKind::CadImport(c) => crate::cad_ui::props(ui, state, id, c),
         ElementKind::Dimension(d) => {
             section(ui, "dimensions", t!("section-dimensions"), |ui| {
                 dimension_value_row(ui, state, id, d);
@@ -504,6 +574,7 @@ fn element_props(ui: &mut Ui, state: &mut AppState, id: ElementId) {
                     opening_rows(ui, state, id, &r.holes, false)
                 });
             }
+            roofing_rows(ui, state, &el);
         }
     }
 
@@ -537,14 +608,32 @@ fn element_props(ui: &mut Ui, state: &mut AppState, id: ElementId) {
     section(ui, "ifc", t!("section-ifc"), |ui| {
         readonly_row(ui, &t!("prop-ifc-guid"), cc_ifc::guid::encode(el.uid.0));
     });
+    let view = state.active_view;
+    let moved = view.and_then(|v| state.project().view(v)).is_some_and(|v| v.tag_offsets.contains_key(&id));
     padded(ui, |ui| {
-        if ui.button(t!("action-delete")).clicked() {
-            state.delete_selection();
-        }
+        ui.horizontal(|ui| {
+            if ui.button(t!("action-delete")).clicked() {
+                state.delete_selection();
+            }
+            // The tag was moved in this view: put it back.
+            if moved
+                && let Some(view) = view
+                && ui.button(t!("action-reset-tag")).clicked()
+            {
+                let reset = cc_engine::commands::annotate::TagMove {
+                    view: cc_engine::Ref::Id(view.0),
+                    id: id.0,
+                    delta: None,
+                    offset: None,
+                    reset: true,
+                };
+                actions::run_command(state, reset);
+            }
+        });
     });
 }
 
-/// Top constraint rows shared by columns and stairs (walls have their own).
+/// Top constraint rows shared by columns, stairs and ramps (walls have their own).
 fn top_rows(ui: &mut Ui, state: &mut AppState, el: &Element, top: cc_core::WallTop, height: f64) {
     use cc_core::WallTop;
     let id = el.id;
@@ -560,6 +649,12 @@ fn top_rows(ui: &mut Ui, state: &mut AppState, el: &Element, top: cc_core::WallT
                 s.top = top;
                 if let Some(h) = height {
                     s.height = h;
+                }
+            }
+            ElementKind::Ramp(r) => {
+                r.top = top;
+                if let Some(h) = height {
+                    r.height = h;
                 }
             }
             _ => {}
@@ -594,6 +689,7 @@ fn top_rows(ui: &mut Ui, state: &mut AppState, el: &Element, top: cc_core::WallT
             length_row(ui, state, &t!("prop-top-offset"), id, "top-offset", offset, move |e, v| match &mut e.kind {
                 ElementKind::Column(c) => c.top = WallTop::Level { level, offset: v },
                 ElementKind::Stair(s) => s.top = WallTop::Level { level, offset: v },
+                ElementKind::Ramp(r) => r.top = WallTop::Level { level, offset: v },
                 _ => {}
             });
         }
@@ -601,6 +697,7 @@ fn top_rows(ui: &mut Ui, state: &mut AppState, el: &Element, top: cc_core::WallT
             length_row(ui, state, &t!("prop-unconnected-height"), id, "height", height, |e, v| match &mut e.kind {
                 ElementKind::Column(c) => c.height = v.max(0.1),
                 ElementKind::Stair(s) => s.height = v.max(0.1),
+                ElementKind::Ramp(r) => r.height = v.max(0.01),
                 _ => {}
             });
         }
@@ -613,14 +710,13 @@ fn top_rows(ui: &mut Ui, state: &mut AppState, el: &Element, top: cc_core::WallT
 pub fn length_drag(value: &mut f64) -> DragValue<'_> {
     let (units, comma) = format::current();
     let unit = units.length.unit;
-    let decimals = units.length.decimals as usize;
-    let per_meter = unit.per_meter();
     let parse_units = units.clone();
-    DragValue::new(value)
+    let drag = DragValue::new(value)
         .speed(0.005)
-        .custom_formatter(move |v, _| format::number_with(&units, comma, v * per_meter, decimals))
-        .custom_parser(move |s| format::parse_length_with(&parse_units, s))
-        .suffix(format!(" {}", unit.symbol()))
+        .custom_formatter(move |v, _| format::length_number_with(&units, comma, v))
+        .custom_parser(move |s| format::parse_length_with(&parse_units, s));
+    // Feet and inches carry their own marks.
+    if unit.is_fractional() { drag } else { drag.suffix(format!(" {}", unit.symbol())) }
 }
 
 /// Drag value for a component parameter, with the unit of its kind.
@@ -724,6 +820,62 @@ fn component_services(ui: &mut Ui, state: &mut AppState, el: &Element, c: &cc_co
                 readonly_row(ui, &t!("col-drain-units"), format::number(drain_units, 1));
                 readonly_row(ui, &t!("prop-supply-weight"), format::number(supply_weight, 2));
             }
+        }
+    });
+}
+
+/// A conceptual mass: its level, base offset and height, whether it is a
+/// loft, and its mass floors (a box per level it spans, with the area of
+/// each and the totals).
+fn mass_props(ui: &mut Ui, state: &mut AppState, el: &Element, m: &cc_core::mass::Mass) {
+    let id = el.id;
+    section(ui, "constraints", t!("section-constraints"), |ui| {
+        level_row(ui, state, el);
+        length_row(ui, state, &t!("prop-base-offset"), id, "base", m.base_offset, |e, v| {
+            if let ElementKind::Mass(m) = &mut e.kind {
+                m.base_offset = v;
+            }
+        });
+        length_row(ui, state, &t!("prop-height"), id, "height", m.height, |e, v| {
+            if let ElementKind::Mass(m) = &mut e.kind {
+                m.height = v.max(0.1);
+            }
+        });
+        let shape = if m.top.is_some() { t!("mass-loft") } else { t!("mass-extrusion") };
+        readonly_row(ui, &t!("prop-mass-shape"), shape);
+    });
+    let geom = state.session.geom().masses.get(&id).cloned();
+    section(ui, "mass-floors", t!("section-mass-floors"), |ui| {
+        let project = state.project();
+        let base = project.level_elevation(el.level) + m.base_offset;
+        let spanned = cc_engine::commands::mass::spanned_levels(project, base, base + m.height);
+        let rows: Vec<_> = spanned.iter().map(|l| (*l, project.level_name(*l).to_string())).collect();
+        if rows.is_empty() {
+            readonly_row(ui, &t!("section-mass-floors"), t!("mass-no-levels"));
+        }
+        for (level, name) in rows {
+            let mut on = m.floors.contains(&level);
+            let area = geom.as_ref().and_then(|g| g.floors.iter().find(|f| f.level == level)).map(|f| f.area);
+            let changed = row(ui, &name, |ui| {
+                let r = ui.checkbox(&mut on, area.map(format::area).unwrap_or_default());
+                r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, &name));
+                r.changed()
+            });
+            if changed {
+                let mut levels: Vec<_> = m.floors.iter().copied().filter(|l| *l != level).collect();
+                if on {
+                    levels.push(level);
+                }
+                let levels = levels.into_iter().map(|l| cc_engine::Ref::Id(l.0)).collect();
+                actions::run_command(
+                    state,
+                    cc_engine::commands::mass::MassFloorsSet { id: id.0, levels: Some(levels) },
+                );
+            }
+        }
+        if let Some(g) = &geom {
+            readonly_row(ui, &t!("col-floor-area"), format::area(g.floor_area()));
+            readonly_row(ui, &t!("prop-volume"), format::volume(g.volume));
         }
     });
 }
@@ -1106,6 +1258,64 @@ fn beam_justification(ui: &mut Ui, state: &mut AppState, id: cc_core::ElementId,
     }
 }
 
+/// A roof's covering and framing, from its type: the tiles and how many,
+/// their weight, the roof's slope against the least the tiles take, and
+/// the framing's lengths and volume.
+fn roofing_rows(ui: &mut Ui, state: &mut AppState, el: &Element) {
+    use cc_geom::roof_framing::MemberKind;
+    let Some(cc_core::TypeData::Roof { covering, framing, .. }) =
+        state.project().element_type(el.type_id).map(|t| &t.data)
+    else {
+        return;
+    };
+    if covering.is_none() && framing.system == cc_core::roofing::FramingSystem::None {
+        return;
+    }
+    let covering = *covering;
+    let Some(g) = state.session.geom().roof_framing.get(&el.id) else { return };
+    section(ui, "roofing", t!("section-roofing"), |ui| {
+        if let Some(kind) = covering {
+            let spec = kind.spec();
+            readonly_row(ui, &t!("prop-covering"), tr(kind.key()));
+            let slope = g.slopes.map(|(lo, _)| lo);
+            let ok = slope.is_some_and(|s| spec.accepts(s));
+            let text = match slope {
+                Some(s) => t!("value-slope-min", "slope" => format::slope(s), "min" => format::slope(spec.min_slope)),
+                None => t!("msg-roof-flat-tiles"),
+            };
+            row(ui, &t!("prop-slope"), |ui| {
+                let color = if ok { PALETTE.text } else { PALETTE.danger };
+                ui.label(RichText::new(text).color(color)).on_hover_text(if ok {
+                    String::new()
+                } else {
+                    t!("hint-roof-too-flat")
+                })
+            });
+            if let Some(n) = spec.tiles(g.sloped_area) {
+                readonly_row(ui, &t!("col-tile-count"), format!("{n:.0}"));
+            }
+            readonly_row(ui, &t!("col-weight"), format!("{:.0} kg", spec.weight_on(g.sloped_area)));
+        }
+        if !g.members.is_empty() {
+            if g.trusses > 0 {
+                readonly_row(ui, &t!("prop-truss-count"), g.trusses.to_string());
+            }
+            for (label, kind) in [
+                ("prop-truss", MemberKind::Truss),
+                ("prop-purlin", MemberKind::Purlin),
+                ("prop-rafter", MemberKind::Rafter),
+                ("prop-batten", MemberKind::Batten),
+            ] {
+                let length = g.length(kind);
+                if length > 0.0 {
+                    readonly_row(ui, &tr(label), format::length(length));
+                }
+            }
+            readonly_row(ui, &t!("col-framing-volume"), format::volume(g.volume()));
+        }
+    });
+}
+
 /// Base and top constraints, location line and room bounding of a wall.
 fn wall_constraints(ui: &mut Ui, state: &mut AppState, el: &Element, w: &cc_core::Wall) {
     use cc_core::{LocationLine, WallTop};
@@ -1425,7 +1635,13 @@ fn view_props(ui: &mut Ui, state: &mut AppState, id: ViewId) {
         let category_name = tr(view.category().key());
         header_block(ui, crate::browser::category_icon(view.category()), &view.name, &category_name);
     });
+    view_sections(ui, state, id);
+}
 
+/// The sections of a view's properties (also shown for a view placed on a
+/// sheet, so it can be changed there).
+fn view_sections(ui: &mut Ui, state: &mut AppState, id: ViewId) {
+    let Some(view) = state.project().view(id).cloned() else { return };
     let graphical = !matches!(view.kind, ViewKind::Schedule { .. } | ViewKind::Sheet { .. });
     if graphical {
         section(ui, "graphics", t!("section-graphics"), |ui| {
@@ -1661,4 +1877,7 @@ fn viewport_props(ui: &mut Ui, state: &mut AppState, sheet: ViewId, index: usize
             }
         });
     });
+    // The placed view's own properties: its scale, graphics, crop and phase
+    // change here, and the sheet follows.
+    view_sections(ui, state, vp.view);
 }

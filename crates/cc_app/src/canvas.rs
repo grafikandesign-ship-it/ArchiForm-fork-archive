@@ -289,6 +289,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, view_id: ViewId) {
         phase: source.phase,
         phase_filter: source.phase_filter,
         references: Vec::new(),
+        tag_offsets: source.tag_offsets.clone(),
     };
     let drawing = state.drawing(view_id).unwrap_or_default();
     let (resp, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());

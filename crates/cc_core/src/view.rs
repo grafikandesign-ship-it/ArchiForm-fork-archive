@@ -217,6 +217,10 @@ pub struct View {
     /// Imported 2D drawings shown behind this plan, embedded in the project.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<PlanReference>,
+    /// Tags moved by hand in this view: their offset in plan from where they
+    /// sit by default, by the element they tag.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub tag_offsets: std::collections::BTreeMap<crate::ElementId, glam::DVec2>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -295,6 +299,7 @@ impl View {
             phase: Default::default(),
             phase_filter: None,
             references: Vec::new(),
+            tag_offsets: Default::default(),
         }
     }
 

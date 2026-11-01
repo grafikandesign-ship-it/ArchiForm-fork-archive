@@ -8,8 +8,8 @@ use crate::registry::{Command, CommandKind};
 use crate::session::Session;
 use crate::t;
 use cc_core::{
-    Beam, BeamLateral, BeamVertical, Category, Ceiling, Column, Component, ElementKind, Floor, Grid, Hosted, LevelId,
-    LocationLine, Project, Railing, Roof, RoofShape, Room, Stair, TypeData, Wall, WallTop,
+    Beam, BeamLateral, BeamVertical, Category, Ceiling, Column, Component, ElementId, ElementKind, Floor, Grid, Hosted,
+    LevelId, LocationLine, Project, Railing, Roof, RoofShape, Room, Wall, WallTop,
 };
 use cc_geom::polygon;
 use glam::DVec2;
@@ -28,7 +28,7 @@ pub(crate) fn top(p: &Project, top_level: Option<&Ref>, top_offset: Option<f64>)
     }
 }
 
-fn create(
+pub(crate) fn create(
     s: &mut Session,
     tx: String,
     level: LevelId,
@@ -191,10 +191,7 @@ fn place_hosted(s: &mut Session, a: HostedArgs, category: Category) -> Result<Va
     let wall = host_el.as_wall().ok_or_else(|| EngineError::invalid(format!("element {} is not a wall", host.0)))?;
     let ty = p.element_type(type_id).ok_or_else(|| EngineError::not_found("type"))?;
     let (width, _) = ty.opening_size().ok_or_else(|| EngineError::invalid("not a door or window type"))?;
-    let default_sill = match ty.data {
-        TypeData::Window { default_sill, .. } => default_sill,
-        _ => 0.0,
-    };
+    let default_sill = ty.default_sill();
     // Openings are placed along the body centerline (an arc for arc walls).
     let (start, end) = p.wall_axis(host_el, wall);
     let axis = Wall { start, end, ..wall.clone() };
@@ -616,7 +613,19 @@ impl Command for RoomCreate {
     }
 }
 
-/// Create a grid line (named with the next free number unless `name` is given).
+/// The grids of `p` with their ids.
+pub fn grids(p: &Project) -> impl Iterator<Item = (ElementId, &Grid)> {
+    p.elements.values().filter_map(|e| match &e.kind {
+        ElementKind::Grid(g) => Some((e.id, g)),
+        _ => None,
+    })
+}
+
+/// Create a grid line. Without `name` it takes the next name of its series:
+/// the one after the most recently placed grid parallel to it (`1` → `2`,
+/// `A` → `B`, `Z` → `AA`, `A1` → `A2`, `1.1` → `1.2`); a grid across the
+/// existing ones starts a new series (letters across numbered grids,
+/// numbers otherwise). Names given this way are unique among the grids.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct GridCreate {
@@ -624,7 +633,7 @@ pub struct GridCreate {
     pub start: Point,
     /// End point.
     pub end: Point,
-    /// Grid name (default: the next free number).
+    /// Grid name (default: the next name of its series).
     #[serde(default)]
     pub name: Option<String>,
     /// Level id or name (default: the lowest level).
@@ -642,12 +651,7 @@ impl Command for GridCreate {
         }
         let p = s.project();
         let level = refs::level_or_first(p, self.level.as_ref())?;
-        let name = self.name.unwrap_or_else(|| {
-            next_number(p.elements.values().filter_map(|e| match &e.kind {
-                ElementKind::Grid(g) => Some(g.name.as_str()),
-                _ => None,
-            }))
-        });
+        let name = self.name.unwrap_or_else(|| cc_core::grid::next_name(grids(p), start, end));
         create(s, t!("tx-create-grid"), level, Category::Grid, None, ElementKind::Grid(Grid { start, end, name }))
     }
 }
@@ -729,7 +733,7 @@ pub struct BeamCreate {
 }
 
 /// A beam justification by name.
-fn justification<T: Copy>(value: Option<&str>, all: &[(&str, T)], what: &str) -> Result<Option<T>> {
+pub(crate) fn justification<T: Copy>(value: Option<&str>, all: &[(&str, T)], what: &str) -> Result<Option<T>> {
     let Some(v) = value else { return Ok(None) };
     all.iter().find(|(name, _)| *name == v).map(|(_, j)| Some(*j)).ok_or_else(|| {
         let names: Vec<&str> = all.iter().map(|(n, _)| *n).collect();
@@ -762,52 +766,6 @@ impl Command for BeamCreate {
     }
 }
 
-/// Create a straight stair starting at `start` and rising along `direction`
-/// (degrees) up to the level above (or `height`). Risers follow the type.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default)]
-#[serde(deny_unknown_fields)]
-pub struct StairCreate {
-    /// Start of the run (center of the first step's edge).
-    pub start: Point,
-    /// Direction of the run in plan, degrees counter-clockwise from +X.
-    #[serde(default)]
-    pub direction: Option<f64>,
-    /// Level id or name (default: the lowest level).
-    #[serde(default)]
-    pub level: Option<Ref>,
-    /// Type id or name (default: the category's default type).
-    #[serde(default, rename = "type")]
-    pub type_ref: Option<Ref>,
-    /// Height when there is no level above (default 3).
-    #[serde(default)]
-    pub height: Option<f64>,
-    /// Level the stair rises to (default: the level above).
-    #[serde(default)]
-    pub top_level: Option<Ref>,
-}
-
-impl Command for StairCreate {
-    const NAME: &'static str = "stair_create";
-    const KIND: CommandKind = CommandKind::Edit;
-    fn run(self, s: &mut Session) -> Result<Value> {
-        let p = s.project();
-        let level = refs::level_or_first(p, self.level.as_ref())?;
-        let top = top(p, self.top_level.as_ref(), None)?.unwrap_or_else(|| default_top(p, level));
-        let height = match top {
-            WallTop::Level { level: t, .. } => p.level_elevation(t) - p.level_elevation(level),
-            WallTop::Unconnected => self.height.unwrap_or(3.0),
-        };
-        let stair = Stair {
-            start: point(self.start)?,
-            direction_deg: finite(self.direction.unwrap_or(0.0), "direction")?,
-            base_offset: 0.0,
-            height: positive(height, "height")?,
-            top,
-        };
-        create(s, t!("tx-create-stair"), level, Category::Stair, self.type_ref.as_ref(), ElementKind::Stair(stair))
-    }
-}
-
 /// Create a railing along a path (at least 2 points).
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
@@ -835,7 +793,8 @@ impl Command for RailingCreate {
             return Err(EngineError::invalid("the path needs at least 2 distinct points"));
         }
         let level = refs::level_or_first(s.project(), self.level.as_ref())?;
-        let railing = Railing { path, base_offset: finite(self.base_offset.unwrap_or(0.0), "base_offset")? };
+        let base_offset = finite(self.base_offset.unwrap_or(0.0), "base_offset")?;
+        let railing = Railing { path, base_offset, stair: None };
         let kind = ElementKind::Railing(railing);
         create(s, t!("tx-create-railing"), level, Category::Railing, self.type_ref.as_ref(), kind)
     }

@@ -5,36 +5,49 @@
 //! [`Document::edit`], which records a [`Transaction`] for undo/redo.
 
 pub mod arc;
+pub mod cad;
 pub mod component;
 pub mod component_file;
+pub mod component_ref;
+pub mod dim_line;
 pub mod dim_refs;
 mod document;
 mod element;
 pub mod expr;
 pub mod graphics;
+pub mod grid;
 mod ids;
+pub mod mass;
 pub mod material;
 pub mod mep;
+pub mod openings;
 mod persist;
 pub mod phase;
 pub mod profile;
 mod project;
 pub mod properties;
+pub mod ramp;
+pub mod recovery;
 mod repair;
+pub mod roofing;
 mod schedule;
+pub mod stair;
+pub mod sweep;
 pub mod transform;
 mod types;
 pub mod units;
 mod view;
 pub mod wall_ops;
 
+pub use cad::{CadColorMode, CadDrawing, CadImport, CadLayer, CadPrim, CadUnit};
 pub use component::{ComponentDef, ComponentItem, ComponentKind, ComponentParam, ComponentShape, ParamKind};
+pub use component_ref::{PlaneAxis, RefDimension, RefEqual, RefLine, RefPlane};
 pub use dim_refs::{DimRef, Projection, RefAnchor, RefHeight, RefTarget};
 pub use document::{Document, EditCtx, Transaction};
 pub use element::{
     BarFace, Beam, BeamLateral, BeamVertical, Ceiling, Column, Component, Dimension, DimensionKind, Element,
-    ElementKind, Floor, Foundation, FoundationShape, Grid, Hosted, Leader, LeaderSymbol, LocationLine, Railing, Rebar,
-    RebarLayout, Roof, RoofShape, Room, Stair, TextNote, Wall, WallTop,
+    ElementKind, Floor, Foundation, FoundationShape, Grid, Hosted, Leader, LeaderSymbol, LocationLine, Railing, Ramp,
+    Rebar, RebarLayout, Roof, RoofShape, Room, Stair, TextNote, Wall, WallTop,
 };
 pub use graphics::{
     CategoryGraphics, FillGraphics, FilterOp, FilterParam, FilterRule, FilterUse, GraphicOverride, LineGraphics,
@@ -51,7 +64,12 @@ pub use persist::{
 pub use phase::{Phase, PhaseDisplay, PhaseFilter, PhaseGraphics, PhaseState, PhaseStatus};
 pub use profile::{ProfilePoint, SketchPlane};
 pub use project::{Group, Level, Project, ProjectInfo, can_join_geometry, join_priority};
+pub use ramp::{RampCheck, RampIssue, RampLayout, RampRules, RampShape, ramp_flights};
 pub use schedule::{ScheduleDef, ScheduleField};
+pub use stair::{
+    StairBuild, StairCheck, StairConstruction, StairIssue, StairLayout, StairRailing, StairRules, StairShape,
+    StairSide, Stringers, TreadRule, Turn, stair_steps,
+};
 pub use transform::PlanTransform;
 pub use types::{
     Category, ColumnSection, ElementType, FoundationKind, Layer, LayerFunction, SectionShape, TypeData, TypeInfo,

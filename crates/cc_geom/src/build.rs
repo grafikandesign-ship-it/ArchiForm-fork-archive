@@ -21,6 +21,71 @@ pub struct HostedPart {
     pub panel: bool,
 }
 
+/// The pieces of the door or window `element` (of `width` x `height`, in a
+/// wall of half thickness `half`) in opening-local coordinates like
+/// [`HostedPart`]s: `x` along the wall from the start jamb, `y` across it
+/// (positive on its left), `z` up from the sill. A door or window component
+/// is resolved with the wall's thickness, centered in the opening and
+/// mirrored by the element's flips; other types give their boxes, frames
+/// with no material and panels of the type's material.
+pub fn opening_parts(
+    project: &Project,
+    element: &cc_core::Element,
+    width: f64,
+    height: f64,
+    half: f64,
+) -> Vec<cc_core::component::ComponentPart> {
+    let Some(ty) = project.element_type(element.type_id) else { return Vec::new() };
+    let TypeData::Component { def, .. } = &ty.data else {
+        return hosted_parts(&ty.data, width, height, half)
+            .into_iter()
+            .map(|p| cc_core::component::ComponentPart {
+                item: 0,
+                footprint: vec![
+                    DVec2::new(p.min.x, p.min.y),
+                    DVec2::new(p.max.x, p.min.y),
+                    DVec2::new(p.max.x, p.max.y),
+                    DVec2::new(p.min.x, p.max.y),
+                ],
+                z0: p.min.z,
+                z1: p.max.z,
+                material: if p.panel { ty.main_material().to_string() } else { String::new() },
+                in_plan: false,
+                void: false,
+                plan_only: false,
+                faces: Vec::new(),
+            })
+            .collect();
+    };
+    let thickness = [(cc_core::component::WALL_THICKNESS, 2.0 * half)];
+    let parts = crate::resolve_component_in(def, &Default::default(), &thickness);
+    let (fx, fy) = match element.as_hosted() {
+        Some(h) => (if h.flip_hand { -1.0 } else { 1.0 }, if h.flip_facing { -1.0 } else { 1.0 }),
+        None => (1.0, 1.0),
+    };
+    let map = |p: DVec2| DVec2::new(p.x * fx + width * 0.5, p.y * fy);
+    // One mirror turns faces inside out: reverse them.
+    let mirrored = fx * fy < 0.0;
+    parts
+        .into_iter()
+        .map(|mut p| {
+            p.footprint = p.footprint.iter().map(|q| map(*q)).collect();
+            for face in &mut p.faces {
+                for v in face.iter_mut() {
+                    *v = map(v.truncate()).extend(v.z);
+                }
+                if mirrored {
+                    face.reverse();
+                }
+            }
+            if mirrored {
+                p.footprint.reverse();
+            }
+            p
+        })
+        .collect()
+}
+
 /// The boxes making up a door or window of `width` x `height` in a wall of
 /// half thickness `half`. Empty for non-hosted types.
 pub fn hosted_parts(data: &TypeData, width: f64, height: f64, half: f64) -> Vec<HostedPart> {
@@ -77,6 +142,12 @@ pub struct ModelGeometry {
     pub join_deductions: BTreeMap<ElementId, f64>,
     /// Solid pieces of each placed component in the world, voids cut out.
     pub components: BTreeMap<ElementId, Vec<cc_core::component::ComponentPart>>,
+    /// Pieces of each door and window in the world (see [`opening_parts`]).
+    pub opening_fills: BTreeMap<ElementId, Vec<cc_core::component::ComponentPart>>,
+    /// Conceptual masses: body, volume and mass floors.
+    pub masses: BTreeMap<ElementId, crate::mass::MassGeom>,
+    /// Roofs: their framing members and covering figures.
+    pub roof_framing: BTreeMap<ElementId, crate::roof_framing::RoofFramingGeom>,
 }
 
 /// A foundation's body: a vertical prism.
@@ -114,112 +185,6 @@ impl BoxPart {
     }
 }
 
-/// Layout of a straight stair run.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct StairGeom {
-    pub start: DVec2,
-    /// Up direction of the run and the perpendicular across it.
-    pub u: DVec2,
-    pub v: DVec2,
-    pub width: f64,
-    pub risers: usize,
-    pub riser: f64,
-    pub tread: f64,
-    pub base: f64,
-    pub top: f64,
-}
-
-impl StairGeom {
-    pub fn run(&self) -> f64 {
-        self.tread * self.risers.saturating_sub(1) as f64
-    }
-
-    /// One box per tread, each from the base up to that tread's surface.
-    pub fn steps(&self) -> Vec<BoxPart> {
-        let w = self.width / 2.0;
-        (0..self.risers.saturating_sub(1))
-            .map(|k| BoxPart {
-                origin: self.start,
-                u: self.u,
-                v: self.v,
-                u_range: (k as f64 * self.tread, (k + 1) as f64 * self.tread),
-                v_range: (-w, w),
-                z_range: (self.base, self.base + (k + 1) as f64 * self.riser),
-            })
-            .collect()
-    }
-
-    /// Plan outline (counter-clockwise).
-    pub fn outline(&self) -> [DVec2; 4] {
-        let (w, l) = (self.width / 2.0, self.run());
-        let p = |a: f64, b: f64| self.start + self.u * a + self.v * b;
-        [p(0.0, -w), p(l, -w), p(l, w), p(0.0, w)]
-    }
-}
-
-/// Layout of a stair element from its type and constraints.
-pub fn stair_geom(project: &Project, element: &cc_core::Element, stair: &cc_core::Stair) -> Option<StairGeom> {
-    let TypeData::Stair { width, max_riser, tread, .. } = project.element_type(element.type_id)?.data else {
-        return None;
-    };
-    let (base, top) = project.stair_span(element, stair);
-    let (risers, riser, _) = cc_core::stair_layout(top - base, max_riser, tread);
-    let u = DVec2::from_angle(stair.direction_deg.to_radians());
-    Some(StairGeom { start: stair.start, u, v: u.perp(), width, risers, riser, tread, base, top })
-}
-
-/// Boxes of a railing: a top rail along each segment and posts at the path
-/// vertices and every `post_spacing` along it.
-pub fn railing_parts(project: &Project, element: &cc_core::Element, railing: &cc_core::Railing) -> Vec<BoxPart> {
-    let Some(TypeData::Railing { height, post_spacing, .. }) = project.element_type(element.type_id).map(|t| &t.data)
-    else {
-        return Vec::new();
-    };
-    let base = project.level_elevation(element.level) + railing.base_offset;
-    let (rail, post) = (0.05, 0.04);
-    let mut parts = Vec::new();
-    for seg in railing.path.windows(2) {
-        let (a, b) = (seg[0], seg[1]);
-        let len = a.distance(b);
-        let Some(u) = (b - a).try_normalize() else { continue };
-        let v = u.perp();
-        parts.push(BoxPart {
-            origin: a,
-            u,
-            v,
-            u_range: (0.0, len),
-            v_range: (-rail / 2.0, rail / 2.0),
-            z_range: (base + height - rail, base + height),
-        });
-        let count = (len / post_spacing.max(0.1)).ceil().max(1.0) as usize;
-        for k in 0..count.min(1000) {
-            let at = len * k as f64 / count as f64;
-            parts.push(BoxPart {
-                origin: a,
-                u,
-                v,
-                u_range: (at - post / 2.0, at + post / 2.0),
-                v_range: (-post / 2.0, post / 2.0),
-                z_range: (base, base + height - rail),
-            });
-        }
-    }
-    // Closing post at the end of the path.
-    if let [.., a, b] = railing.path.as_slice()
-        && let Some(u) = (*b - *a).try_normalize()
-    {
-        parts.push(BoxPart {
-            origin: *b,
-            u,
-            v: u.perp(),
-            u_range: (-post / 2.0, post / 2.0),
-            v_range: (-post / 2.0, post / 2.0),
-            z_range: (base, base + height - rail),
-        });
-    }
-    parts
-}
-
 /// Plan outline of a column section's bounding shape (counter-clockwise):
 /// its box, or its circle for round sections.
 pub fn column_outline(section: cc_core::ColumnSection, position: DVec2, rotation_deg: f64) -> Vec<DVec2> {
@@ -250,6 +215,47 @@ pub fn component_parts(
         return Vec::new();
     };
     place_parts(project, element, component, crate::resolve_component(def, &component.overrides))
+}
+
+/// A component's connector in the world: where a run joins it (`point`, its
+/// z the absolute elevation) and the way the run leaves (`direction`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorldConnector {
+    pub index: usize,
+    pub name: String,
+    pub system: cc_core::SystemKind,
+    pub point: DVec3,
+    pub direction: DVec3,
+    /// Whether the run leaves vertically (down or up).
+    pub vertical: bool,
+    pub diameter: Option<f64>,
+}
+
+/// The connectors of a placed component, in the world.
+pub fn component_connectors(project: &Project, element: &cc_core::Element) -> Vec<WorldConnector> {
+    let ElementKind::Component(c) = &element.kind else { return Vec::new() };
+    let Some(TypeData::Component { def, .. }) = project.element_type(element.type_id).map(|t| &t.data) else {
+        return Vec::new();
+    };
+    let rot = DVec2::from_angle(c.rotation_deg.to_radians());
+    let z = project.level_elevation(element.level) + c.base_offset;
+    def.resolve_connectors(&c.overrides)
+        .into_iter()
+        .map(|k| {
+            let d = k.direction.vector();
+            let plan = c.position + rot.rotate(k.point.truncate());
+            WorldConnector {
+                index: k.index,
+                name: k.name,
+                system: k.system,
+                point: plan.extend(z + k.point.z),
+                direction: rot.rotate(d.truncate()).extend(d.z),
+                vertical: k.direction.is_vertical(),
+                diameter: k.diameter,
+            }
+        })
+        .filter(|k| k.point.is_finite())
+        .collect()
 }
 
 /// Pieces in a component's frame moved to where `component` stands.
@@ -289,6 +295,7 @@ impl ModelGeometry {
         geom.build_structure(project);
         geom.rebar = crate::rebar::build_rebar(project, &geom.beams);
         geom.build_components(project);
+        geom.build_masses(project);
         geom.build_mep(project);
         geom.apply_joins(project);
         geom.build_rooms(project);
@@ -306,7 +313,7 @@ impl ModelGeometry {
             closed.face_gaps.clear();
             return vec![mesh(&closed.to_solid([0, 0, 0]))];
         }
-        self.solids_of(id).map(mesh).collect()
+        self.body_of(id).map(mesh).collect()
     }
 
     /// Volume the bodies of `a` and `b` share (0 when they only touch). Bodies
@@ -348,7 +355,7 @@ impl ModelGeometry {
                 *self.join_deductions.entry(cut).or_default() += shared;
                 continue;
             }
-            for solid in self.solids.iter_mut().filter(|s| s.element == cut) {
+            for solid in self.solids.iter_mut().filter(|s| s.element == cut && !s.secondary) {
                 for cutter in &cutters {
                     let body: Vec<Vec<DVec3>> = solid.faces.iter().map(|f| f.verts.clone()).collect();
                     if !crate::csg::bounds_overlap(&body, cutter) {
@@ -378,7 +385,7 @@ impl ModelGeometry {
             let key = (e.type_id, c.overrides.iter().map(|(k, v)| (k.clone(), v.to_bits())).collect());
             let local = resolved.entry(key).or_insert_with(|| crate::resolve_component(def, &c.overrides)).clone();
             let parts = place_parts(project, e, c, local);
-            for part in &parts {
+            for part in parts.iter().filter(|p| !p.plan_only) {
                 let mut s = Solid::of_material(e.id, e.category(), project, &part.material);
                 if part.faces.is_empty() {
                     s.add_prism(&part.footprint, |_| part.z0, |_| part.z1);
@@ -393,7 +400,22 @@ impl ModelGeometry {
         }
     }
 
-    /// Columns, beams, stairs and railings.
+    /// Conceptual masses: see-through bodies, and their mass floors.
+    fn build_masses(&mut self, project: &Project) {
+        for e in project.elements.values() {
+            let ElementKind::Mass(m) = &e.kind else { continue };
+            let Some(g) = crate::mass::mass_geom(project, e, m) else { continue };
+            let material = project.element_type(e.type_id).map_or("", |t| t.main_material());
+            let mut s = Solid::of_material(e.id, e.category(), project, material);
+            // Masses are studied through: at least partly transparent.
+            s.transparency = s.transparency.max(0.4);
+            s.add_polygons(g.faces.clone());
+            self.solids.push(s);
+            self.masses.insert(e.id, g);
+        }
+    }
+
+    /// Columns, beams, stairs, ramps and railings.
     fn build_structure(&mut self, project: &Project) {
         for e in project.elements.values() {
             let Some(ty) = project.element_type(e.type_id) else { continue };
@@ -409,13 +431,15 @@ impl ModelGeometry {
                     let Some(g) = self.beams.get(&e.id) else { continue };
                     g.add_to(&mut s);
                 }
-                (ElementKind::Stair(st), TypeData::Stair { .. }) => {
-                    let Some(g) = stair_geom(project, e, st) else { continue };
-                    g.steps().iter().for_each(|p| p.add_to(&mut s));
+                (ElementKind::Stair(st), TypeData::Stair { build, .. }) => {
+                    let Some(g) = crate::stair_geom(project, e, st) else { continue };
+                    g.add_to(build, &mut s);
                 }
-                (ElementKind::Railing(r), TypeData::Railing { .. }) => {
-                    railing_parts(project, e, r).iter().for_each(|p| p.add_to(&mut s));
+                (ElementKind::Ramp(r), TypeData::Ramp { thickness, .. }) => {
+                    let Some(g) = crate::ramp_geom(project, e, r) else { continue };
+                    g.add_to(*thickness, &mut s);
                 }
+                (ElementKind::Railing(r), TypeData::Railing { .. }) => crate::add_railing(project, e, r, &mut s),
                 _ => continue,
             }
             if !s.faces.is_empty() {
@@ -661,27 +685,48 @@ impl ModelGeometry {
     }
 
     fn build_hosted(&mut self, project: &Project) {
+        let mut fills = BTreeMap::new();
         for wall in self.walls.values() {
             for o in &wall.openings {
                 let Some(e) = project.element(o.element) else { continue };
-                let Some(ty) = project.element_type(e.type_id) else { continue };
-                let parts = hosted_parts(&ty.data, o.u1 - o.u0, o.z1 - o.z0, wall.half);
-                let mut frame = Solid::new(e.id, e.category(), FRAME_COLOR);
-                let mut panel = Solid::of_material(e.id, e.category(), project, ty.main_material());
-                // In an arc wall the boxes are square to the wall at the opening's center.
+                let parts = opening_parts(project, e, o.u1 - o.u0, o.z1 - o.z0, wall.half);
+                // In an arc wall the pieces are square to the wall at the opening's center.
                 let (origin, dir, normal) = wall.frame_at((o.u0 + o.u1) * 0.5);
-                for p in &parts {
-                    let s = if p.panel { &mut panel } else { &mut frame };
-                    let (lo, hi) = (p.min, p.max);
-                    s.add_box(origin, dir, normal, o.u0 + lo.x, o.u0 + hi.x, lo.y, hi.y, o.z0 + lo.z, o.z0 + hi.z);
-                }
-                for s in [frame, panel] {
+                let world = |p: DVec2| origin + dir * (o.u0 + p.x) + normal * p.y;
+                let mut placed = Vec::with_capacity(parts.len());
+                for mut p in parts {
+                    p.footprint = p.footprint.iter().map(|q| world(*q)).collect();
+                    p.z0 += o.z0;
+                    p.z1 += o.z0;
+                    for face in &mut p.faces {
+                        for v in face.iter_mut() {
+                            *v = world(v.truncate()).extend(v.z + o.z0);
+                        }
+                    }
+                    if p.plan_only {
+                        placed.push(p);
+                        continue;
+                    }
+                    // Frames without a material keep the frame color.
+                    let mut s = if p.material.is_empty() {
+                        Solid::new(e.id, e.category(), FRAME_COLOR)
+                    } else {
+                        Solid::of_material(e.id, e.category(), project, &p.material)
+                    };
+                    if p.faces.is_empty() {
+                        s.add_prism(&p.footprint, |_| p.z0, |_| p.z1);
+                    } else {
+                        s.add_polygons(p.faces.clone());
+                    }
                     if !s.faces.is_empty() {
                         self.solids.push(s);
                     }
+                    placed.push(p);
                 }
+                fills.insert(e.id, placed);
             }
         }
+        self.opening_fills = fills;
     }
 
     fn build_slabs(&mut self, project: &Project) {
@@ -769,6 +814,21 @@ impl ModelGeometry {
                 }
                 _ => continue,
             }
+            // A roof's framing and covering figures, from its sloped faces.
+            if let (ElementKind::Roof(_), TypeData::Roof { covering, framing, .. }) = (&e.kind, &ty.data) {
+                let g = crate::roof_framing::roof_framing(&s, framing, *covering);
+                if !g.members.is_empty() {
+                    // Its own solid, in the framing's material, apart from the
+                    // roof's body (left out of its volume, joins and IFC body).
+                    let mut members = Solid::of_material(e.id, Category::Beam, project, &framing.material);
+                    members.secondary = true;
+                    for m in &g.members {
+                        m.add_to(&mut members);
+                    }
+                    self.solids.push(members);
+                }
+                self.roof_framing.insert(e.id, g);
+            }
             self.solids.push(s);
         }
     }
@@ -777,8 +837,41 @@ impl ModelGeometry {
         self.solids.iter().filter(move |s| s.element == id)
     }
 
+    /// The solids of an element's body: its solids without secondary parts
+    /// such as a roof's framing.
+    pub fn body_of(&self, id: ElementId) -> impl Iterator<Item = &Solid> {
+        self.solids_of(id).filter(|s| !s.secondary)
+    }
+
     pub fn bounds(&self) -> Option<(DVec3, DVec3)> {
         self.solids.iter().filter_map(Solid::bounds).reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))
+    }
+
+    /// The vertical faces of an element seen from above: each one is a plan
+    /// segment (the sides of a column, the faces of a component).
+    pub fn plan_edges(&self, id: ElementId) -> Vec<(DVec2, DVec2)> {
+        let mut out = Vec::new();
+        for face in self.body_of(id).flat_map(|s| s.faces.iter()) {
+            let n = DVec2::new(face.normal.x, face.normal.y);
+            if face.normal.z.abs() > 1e-6 || n.length_squared() < 0.5 {
+                continue;
+            }
+            let (n, d) = (n.normalize_or_zero(), n.normalize_or_zero().perp());
+            let Some(first) = face.verts.first() else { continue };
+            let offset = DVec2::new(first.x, first.y).dot(n);
+            let along = face.verts.iter().map(|v| DVec2::new(v.x, v.y).dot(d));
+            let (lo, hi) = along.fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), t| (lo.min(t), hi.max(t)));
+            if hi - lo > 1e-6 && lo.is_finite() && hi.is_finite() {
+                out.push((n * offset + d * lo, n * offset + d * hi));
+            }
+        }
+        out
+    }
+
+    /// The plan segment of an element's vertical faces nearest to `p` (see [`Self::plan_edges`]).
+    pub fn nearest_plan_edge(&self, id: ElementId, p: DVec2) -> Option<(DVec2, DVec2)> {
+        let dist = |e: &(DVec2, DVec2)| polygon::closest_on_segment(e.0, e.1, p).0.distance(p);
+        self.plan_edges(id).into_iter().min_by(|x, y| dist(x).total_cmp(&dist(y)))
     }
 
     /// Volume of an element's main body (frames/glass excluded for openings).
@@ -787,25 +880,44 @@ impl ModelGeometry {
             let shared = self.join_deductions.get(&id).copied().unwrap_or(0.0);
             return (wall.volume() - shared).max(0.0);
         }
-        self.solids_of(id).map(Solid::volume).sum()
+        self.body_of(id).map(Solid::volume).sum()
     }
 
     /// The nearest solid along `ray` among the elements `shown` accepts.
     pub fn pick_where(&self, ray: Ray, shown: &mut dyn FnMut(ElementId) -> bool) -> Option<(ElementId, f64)> {
-        self.solids
-            .iter()
-            .filter_map(|s| s.raycast(ray).map(|t| (s.element, t)))
-            .filter(|(e, _)| shown(*e))
-            .min_by(|a, b| a.1.total_cmp(&b.1))
+        self.nearest(ray, &mut |s| shown(s.element))
     }
 
     /// Closest element hit by `ray`, skipping categories in `hidden`.
     pub fn pick(&self, ray: Ray, hidden: &[Category]) -> Option<(ElementId, f64)> {
-        self.solids
-            .iter()
-            .filter(|s| !hidden.contains(&s.category))
-            .filter_map(|s| s.raycast(ray).map(|t| (s.element, t)))
-            .min_by(|a, b| a.1.total_cmp(&b.1))
+        self.nearest(ray, &mut |s| !hidden.contains(&s.category))
+    }
+
+    /// The nearest hit among the solids `accept` takes (on a tie, the first
+    /// solid). Solids are tried in the order the ray meets their boxes, until
+    /// the next box lies beyond the nearest hit.
+    fn nearest(&self, ray: Ray, accept: &mut dyn FnMut(&Solid) -> bool) -> Option<(ElementId, f64)> {
+        let mut boxes: Vec<(f64, usize)> = (self.solids.iter().enumerate())
+            .filter_map(|(i, s)| {
+                let (lo, hi) = s.bounds()?;
+                Some((crate::solid::ray_box(ray, lo, hi)?, i))
+            })
+            .collect();
+        boxes.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut best: Option<(f64, usize)> = None;
+        for (entry, i) in boxes {
+            let limit = best.map_or(f64::INFINITY, |(t, _)| t);
+            if entry > limit {
+                break;
+            }
+            let Some(solid) = self.solids.get(i) else { continue };
+            let Some(t) = solid.raycast_within(ray, limit) else { continue };
+            let closer = best.is_none_or(|(bt, bi)| t < bt || (t == bt && i < bi));
+            if closer && accept(solid) {
+                best = Some((t, i));
+            }
+        }
+        best.and_then(|(t, i)| Some((self.solids.get(i)?.element, t)))
     }
 }
 
@@ -1111,6 +1223,7 @@ mod tests {
                     base_offset: 0.0,
                     height: 3.0,
                     top,
+                    layout: Default::default(),
                 }),
             );
             let column = add(
@@ -1137,7 +1250,7 @@ mod tests {
         // 3.00 m at most 0.18 per riser: 17 risers of 3/17 and 16 treads of 0.28.
         let stair_el = doc.project.element(stair).unwrap();
         let ElementKind::Stair(st) = &stair_el.kind else { panic!("not a stair") };
-        let sg = stair_geom(&doc.project, stair_el, st).unwrap();
+        let sg = crate::stair_geom(&doc.project, stair_el, st).unwrap();
         assert_eq!(sg.risers, 17);
         assert!((sg.run() - 16.0 * 0.28).abs() < 1e-12);
         let expected = 0.28 * 1.0 * (3.0 / 17.0) * (1..=16).sum::<usize>() as f64;
@@ -1194,5 +1307,43 @@ mod tests {
         let (id, t) = g.pick(ray, &[]).unwrap();
         assert_eq!(doc.project.element(id).unwrap().category(), Category::Wall);
         assert!((t - (10.0 - 0.075)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn pick_matches_testing_every_solid() {
+        let doc = sample_house();
+        let g = ModelGeometry::build(&doc.project);
+        let walls: Vec<ElementId> =
+            doc.project.elements.values().filter(|e| e.category() == Category::Wall).map(|e| e.id).collect();
+        // The first solid hit (in order) among those shown, nearest first.
+        let brute = |ray: Ray, shown: &dyn Fn(ElementId) -> bool| {
+            g.solids
+                .iter()
+                .filter_map(|s| s.raycast(ray).map(|t| (s.element, t)))
+                .filter(|(e, _)| shown(*e))
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+        };
+        let mut hits = 0;
+        for i in 0..15 {
+            for j in 0..15 {
+                // Rays from outside, from above and along the axes (zero direction components).
+                let (x, y) = (-2.0 + i as f64 * 0.8, -2.0 + j as f64 * 0.7);
+                for ray in [
+                    Ray { origin: DVec3::new(-20.0, y, x * 0.3), dir: DVec3::new(1.0, 0.07, 0.01) },
+                    Ray { origin: DVec3::new(x, y, 20.0), dir: DVec3::new(0.0, 0.0, -1.0) },
+                    Ray { origin: DVec3::new(x, -20.0, 1.2), dir: DVec3::Y },
+                ] {
+                    let all = brute(ray, &|_| true);
+                    hits += usize::from(all.is_some());
+                    assert_eq!(g.pick_where(ray, &mut |_| true), all);
+                    assert_eq!(g.pick(ray, &[]), all);
+                    // Walls hidden: the ray goes through to what lies behind.
+                    let no_walls = brute(ray, &|e| !walls.contains(&e));
+                    assert_eq!(g.pick_where(ray, &mut |e| !walls.contains(&e)), no_walls);
+                    assert_eq!(g.pick(ray, &[Category::Wall]), no_walls);
+                }
+            }
+        }
+        assert!(hits > 100, "{hits}");
     }
 }

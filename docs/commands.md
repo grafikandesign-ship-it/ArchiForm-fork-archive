@@ -6,13 +6,13 @@ Every command runs the same way from the desktop app, `ccad run` / `ccad script`
 
 ## Contents
 
-- **Project and files**: [`project_new`](#project_new), [`project_open`](#project_open), [`project_save`](#project_save), [`project_info`](#project_info), [`project_info_set`](#project_info_set), [`undo`](#undo), [`redo`](#redo), [`units_get`](#units_get), [`units_set`](#units_set), [`language_set`](#language_set), [`ifc_import`](#ifc_import), [`reference_import`](#reference_import), [`reference_set`](#reference_set), [`reference_calibrate`](#reference_calibrate), [`reference_remove`](#reference_remove), [`ifc_export`](#ifc_export), [`sheet_export`](#sheet_export), [`view_export`](#view_export), [`schedule_export_csv`](#schedule_export_csv), [`component_load`](#component_load), [`component_save`](#component_save), [`wall_presets_list`](#wall_presets_list), [`wall_preset_add`](#wall_preset_add)
+- **Project and files**: [`project_new`](#project_new), [`project_open`](#project_open), [`project_save`](#project_save), [`project_info`](#project_info), [`project_info_set`](#project_info_set), [`undo`](#undo), [`redo`](#redo), [`units_get`](#units_get), [`units_set`](#units_set), [`language_set`](#language_set), [`ifc_import`](#ifc_import), [`reference_import`](#reference_import), [`reference_set`](#reference_set), [`reference_calibrate`](#reference_calibrate), [`reference_remove`](#reference_remove), [`ifc_export`](#ifc_export), [`sheet_export`](#sheet_export), [`view_export`](#view_export), [`schedule_export_csv`](#schedule_export_csv), [`component_load`](#component_load), [`component_library_list`](#component_library_list), [`component_save`](#component_save), [`wall_presets_list`](#wall_presets_list), [`wall_preset_add`](#wall_preset_add), [`cad_import`](#cad_import), [`cad_layers`](#cad_layers), [`cad_layers_set`](#cad_layers_set)
 - **Queries**: [`categories_list`](#categories_list), [`levels_list`](#levels_list), [`types_list`](#types_list), [`type_get`](#type_get), [`elements_list`](#elements_list), [`element_get`](#element_get), [`groups_list`](#groups_list), [`measure`](#measure), [`views_list`](#views_list), [`view_get`](#view_get), [`materials_list`](#materials_list), [`material_get`](#material_get), [`schedule_table`](#schedule_table)
-- **Creating elements**: [`wall_create`](#wall_create), [`door_create`](#door_create), [`window_create`](#window_create), [`floor_create`](#floor_create), [`floor_opening_add`](#floor_opening_add), [`floor_opening_remove`](#floor_opening_remove), [`ceiling_create`](#ceiling_create), [`roof_create`](#roof_create), [`roof_edge_set`](#roof_edge_set), [`roof_opening_remove`](#roof_opening_remove), [`room_create`](#room_create), [`grid_create`](#grid_create), [`column_create`](#column_create), [`beam_create`](#beam_create), [`columns_at_grids`](#columns_at_grids), [`beams_on_grids`](#beams_on_grids), [`beams_between_columns`](#beams_between_columns), [`slab_join_supports`](#slab_join_supports), [`structure_number`](#structure_number), [`brace_create`](#brace_create), [`braces_between_columns`](#braces_between_columns), [`truss_create`](#truss_create), [`rebar_create`](#rebar_create), [`rebar_typical`](#rebar_typical), [`analytical_model`](#analytical_model), [`analytical_export`](#analytical_export), [`footing_create`](#footing_create), [`strip_footing_create`](#strip_footing_create), [`foundation_slab_create`](#foundation_slab_create), [`footings_under_columns`](#footings_under_columns), [`strip_footings_under_walls`](#strip_footings_under_walls), [`stair_create`](#stair_create), [`railing_create`](#railing_create), [`component_place`](#component_place)
+- **Creating elements**: [`wall_create`](#wall_create), [`door_create`](#door_create), [`window_create`](#window_create), [`floor_create`](#floor_create), [`floor_opening_add`](#floor_opening_add), [`floor_opening_remove`](#floor_opening_remove), [`ceiling_create`](#ceiling_create), [`roof_create`](#roof_create), [`roof_edge_set`](#roof_edge_set), [`roof_opening_remove`](#roof_opening_remove), [`room_create`](#room_create), [`grid_create`](#grid_create), [`column_create`](#column_create), [`beam_create`](#beam_create), [`columns_at_grids`](#columns_at_grids), [`beams_on_grids`](#beams_on_grids), [`beams_between_columns`](#beams_between_columns), [`slab_join_supports`](#slab_join_supports), [`structure_number`](#structure_number), [`brace_create`](#brace_create), [`braces_between_columns`](#braces_between_columns), [`truss_create`](#truss_create), [`rebar_create`](#rebar_create), [`rebar_typical`](#rebar_typical), [`analytical_model`](#analytical_model), [`analytical_export`](#analytical_export), [`footing_create`](#footing_create), [`strip_footing_create`](#strip_footing_create), [`foundation_slab_create`](#foundation_slab_create), [`footings_under_columns`](#footings_under_columns), [`strip_footings_under_walls`](#strip_footings_under_walls), [`stair_create`](#stair_create), [`stair_check`](#stair_check), [`stair_railings_add`](#stair_railings_add), [`ramp_create`](#ramp_create), [`ramp_check`](#ramp_check), [`roof_check`](#roof_check), [`mass_create`](#mass_create), [`mass_floors_set`](#mass_floors_set), [`mass_floors`](#mass_floors), [`mass_type_create`](#mass_type_create), [`mass_face_move`](#mass_face_move), [`mass_walls_create`](#mass_walls_create), [`mass_slabs_create`](#mass_slabs_create), [`mass_roof_create`](#mass_roof_create), [`ramp_type_create`](#ramp_type_create), [`railing_create`](#railing_create), [`component_place`](#component_place)
 - **Building services**: [`pipe_create`](#pipe_create), [`conduit_create`](#conduit_create), [`systems_list`](#systems_list), [`system_create`](#system_create), [`system_set`](#system_set), [`system_delete`](#system_delete), [`system_assign`](#system_assign), [`circuit_loads`](#circuit_loads), [`mep_fittings`](#mep_fittings), [`mep_connect`](#mep_connect), [`mep_sizing`](#mep_sizing), [`mep_size_apply`](#mep_size_apply)
-- **Modifying elements**: [`elements_delete`](#elements_delete), [`elements_move`](#elements_move), [`elements_copy`](#elements_copy), [`elements_rotate`](#elements_rotate), [`elements_mirror`](#elements_mirror), [`elements_pin`](#elements_pin), [`element_flip`](#element_flip), [`elements_turn`](#elements_turn), [`elements_export`](#elements_export), [`elements_paste`](#elements_paste), [`wall_join`](#wall_join), [`geometry_join`](#geometry_join), [`geometry_unjoin`](#geometry_unjoin), [`group_create`](#group_create), [`group_ungroup`](#group_ungroup), [`trim_corner`](#trim_corner), [`trim_extend`](#trim_extend), [`element_split`](#element_split), [`element_offset`](#element_offset), [`element_align`](#element_align), [`element_move_end`](#element_move_end), [`element_set`](#element_set), [`elements_set_type`](#elements_set_type)
-- **Dimensions and text**: [`dimension_create`](#dimension_create), [`dimension_set_value`](#dimension_set_value), [`text_create`](#text_create), [`text_add_leader`](#text_add_leader), [`text_remove_leader`](#text_remove_leader)
-- **Types, components, materials**: [`type_set`](#type_set), [`type_duplicate`](#type_duplicate), [`type_delete`](#type_delete), [`component_create`](#component_create), [`material_create`](#material_create), [`material_duplicate`](#material_duplicate), [`material_rename`](#material_rename), [`material_set`](#material_set), [`material_delete`](#material_delete)
+- **Modifying elements**: [`elements_delete`](#elements_delete), [`elements_move`](#elements_move), [`elements_copy`](#elements_copy), [`elements_rotate`](#elements_rotate), [`elements_mirror`](#elements_mirror), [`elements_pin`](#elements_pin), [`element_flip`](#element_flip), [`elements_turn`](#elements_turn), [`elements_export`](#elements_export), [`elements_paste`](#elements_paste), [`wall_join`](#wall_join), [`geometry_join`](#geometry_join), [`geometry_unjoin`](#geometry_unjoin), [`group_create`](#group_create), [`group_ungroup`](#group_ungroup), [`trim_corner`](#trim_corner), [`trim_extend`](#trim_extend), [`element_split`](#element_split), [`element_offset`](#element_offset), [`element_align`](#element_align), [`element_move_end`](#element_move_end), [`grids_align_ends`](#grids_align_ends), [`element_set`](#element_set), [`elements_set_type`](#elements_set_type)
+- **Dimensions and text**: [`dimension_create`](#dimension_create), [`tag_move`](#tag_move), [`dimension_chain_create`](#dimension_chain_create), [`dimension_ordinate_create`](#dimension_ordinate_create), [`dimension_set_value`](#dimension_set_value), [`text_create`](#text_create), [`text_add_leader`](#text_add_leader), [`text_remove_leader`](#text_remove_leader)
+- **Types, components, materials**: [`type_set`](#type_set), [`type_duplicate`](#type_duplicate), [`type_delete`](#type_delete), [`component_create`](#component_create), [`component_get`](#component_get), [`component_param_add`](#component_param_add), [`component_param_set`](#component_param_set), [`component_param_delete`](#component_param_delete), [`component_ref_plane_add`](#component_ref_plane_add), [`component_ref_plane_set`](#component_ref_plane_set), [`component_ref_plane_delete`](#component_ref_plane_delete), [`component_ref_line_add`](#component_ref_line_add), [`component_ref_line_delete`](#component_ref_line_delete), [`component_dimension_add`](#component_dimension_add), [`component_dimension_set`](#component_dimension_set), [`component_dimension_delete`](#component_dimension_delete), [`component_equal_add`](#component_equal_add), [`component_equal_delete`](#component_equal_delete), [`component_piece_add`](#component_piece_add), [`component_piece_set`](#component_piece_set), [`component_piece_delete`](#component_piece_delete), [`material_create`](#material_create), [`material_duplicate`](#material_duplicate), [`material_rename`](#material_rename), [`material_set`](#material_set), [`material_delete`](#material_delete)
 - **Levels and views**: [`level_create`](#level_create), [`level_set`](#level_set), [`level_delete`](#level_delete), [`view_create`](#view_create), [`view_set`](#view_set), [`view_duplicate`](#view_duplicate), [`view_delete`](#view_delete), [`sheet_place_view`](#sheet_place_view), [`sheet_remove_viewport`](#sheet_remove_viewport)
 - **Drawing layers**: [`layers_list`](#layers_list), [`layer_create`](#layer_create), [`layer_rename`](#layer_rename), [`layer_delete`](#layer_delete), [`layer_set_visible`](#layer_set_visible), [`layer_activate`](#layer_activate), [`elements_set_layer`](#elements_set_layer)
 - **View graphics**: [`view_graphics_get`](#view_graphics_get), [`view_graphics_set`](#view_graphics_set), [`element_override_set`](#element_override_set), [`element_hide_in_view`](#element_hide_in_view), [`filters_list`](#filters_list), [`filter_create`](#filter_create), [`filter_set`](#filter_set), [`filter_delete`](#filter_delete), [`filter_elements`](#filter_elements), [`view_filter_add`](#view_filter_add), [`view_filter_set`](#view_filter_set), [`view_filter_remove`](#view_filter_remove), [`view_filter_move`](#view_filter_move), [`templates_list`](#templates_list), [`template_create`](#template_create), [`template_set`](#template_set), [`template_delete`](#template_delete), [`view_template_apply`](#view_template_apply), [`view_template_assign`](#view_template_assign), [`view_temporary`](#view_temporary), [`view_temporary_apply`](#view_temporary_apply)
@@ -80,19 +80,20 @@ No parameters.
 
 ### `units_set`
 
-*edit* — Change the project units: `values` is merged into the object `units_get` returns (only the fields given change).
+*edit* — Change the project units: `values` is merged into the object `units_get` returns (only the fields given change), after `preset` when given. Length units are `Millimeter`, `Centimeter`, `Meter`, `Foot`, `Inch`, `FeetInches` (`12'-6 1/2"`) and `FractionalInch`; for the last two, `decimals` is the precision, 1/2^decimals of an inch.
 
 | Parameter | Type | | Description |
 |---|---|---|---|
-| `values` | JSON | required | Fields to change, shaped like the result of `units_get`. |
+| `preset` | string | optional | Start from `metric` (the defaults) or `imperial` (feet and inches to 1/16", square and cubic feet). |
+| `values` | JSON | optional | Fields to change, shaped like the result of `units_get`. |
 
 ### `language_set`
 
-*edit* — Language of default names, messages and sheet labels (`en`, `pt-BR`, `es`, `fr`, `de`, `it`, `pl` or `uk-UA`).
+*edit* — Language of default names, messages and sheet labels (`en`, `pt-BR`, `es`, `fr`, `de`, `it`, `lo`, `pl`, `uk-UA`, `zh-TW` or `zh-CN`).
 
 | Parameter | Type | | Description |
 |---|---|---|---|
-| `language` | string | required | Language code: `en`, `pt-BR`, `es`, `fr`, `de`, `it`, `pl` or `uk-UA`. |
+| `language` | string | required | Language code: `en`, `pt-BR`, `es`, `fr`, `de`, `it`, `lo`, `pl`, `uk-UA`, `zh-TW` or `zh-CN`. |
 
 ### `ifc_import`
 
@@ -193,6 +194,15 @@ No parameters.
 |---|---|---|---|
 | `path` | string | required | Path of the .ccomp file. |
 
+### `component_library_list`
+
+*file* — List the component library: the component files (.ccomp) in `folders` and their subfolders, each with its component, kind, category (doors and windows have their own), types, parameters and connectors; `search` keeps those whose component, type names or descriptions contain it. Files that do not load are listed with the reason.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `folders` | [string, …] | required | Folders to look in. |
+| `search` | string | optional | Text to look for (any case). |
+
 ### `component_save`
 
 *file* — Save a component (all its types and the materials they use) to a .ccomp file.
@@ -215,6 +225,40 @@ No parameters.
 | Parameter | Type | | Description |
 |---|---|---|---|
 | `preset` | string | required | Stable preset code from `wall_presets_list` (for example `WP-E01`). |
+
+### `cad_import`
+
+*edit* — Import a DWG or DXF file into a 2D view (plan, ceiling plan, elevation, section or legend) as a drawing to trace over, in one undo step. DXF (ASCII or binary, any version) is read entirely by ConstructCAD; DWG (R12 to 2018 and later) through the acadrust library. Blocks are inserted, curves kept as arcs, texts kept; entities that are not drawn (3D solids, images, infinite lines…) are counted in `skipped`. The element starts pinned, with the layers that are off or frozen in the file hidden, and in the view's level. It is drawn in the view only, under the model, and is left out of 3D views and IFC export.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `path` | string | required | Path of the .dwg or .dxf file. |
+| `view` | id or name | required | View id or name. |
+| `align` | string | optional | `origin` (the drawing's origin at `position`), `center`, or `auto`: the origin, unless that leaves the drawing more than 1 km from what the view shows (a drawing in survey coordinates), then the center. |
+| `color_mode` | string | optional | `grey` (default), `layers` (the file's colors) or `black`. |
+| `halftone` | boolean | optional | Draw it faded (default false). |
+| `position` | [x, y] | optional | Where the drawing goes, view coordinates in meters: its origin (`align` "origin", the default; [0, 0] if not given) or the center of its extents (`align` "center"; the center of what the view shows if not given). |
+| `rotation` | number | optional | Rotation in degrees counter-clockwise. |
+| `scale` | number | optional | Extra scale on top of the units (default 1). |
+| `units` | string | optional | Drawing units, overriding the file's: mm, cm, dm, m, km, in, ft, yd or mi. Unitless files are read as meters when small (up to 1500 units across), else as millimeters. |
+
+### `cad_layers`
+
+*query* — The layers of an imported drawing: name, color, whether the view shows it, whether it was on in the file, and how many primitives it holds.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `id` | integer | required | Imported drawing element id. |
+
+### `cad_layers_set`
+
+*edit* — Show or hide layers of an imported drawing (by name; all of them when `layers` is empty).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `id` | integer | required | Imported drawing element id. |
+| `visible` | boolean | required | Show (true) or hide (false) them. |
+| `layers` | [string, …] | optional | Layer names (case-insensitive); empty for every layer. |
 
 ## Queries
 
@@ -460,14 +504,14 @@ No parameters.
 
 ### `grid_create`
 
-*edit* — Create a grid line (named with the next free number unless `name` is given).
+*edit* — Create a grid line. Without `name` it takes the next name of its series: the one after the most recently placed grid parallel to it (`1` → `2`, `A` → `B`, `Z` → `AA`, `A1` → `A2`, `1.1` → `1.2`); a grid across the existing ones starts a new series (letters across numbered grids, numbers otherwise). Names given this way are unique among the grids.
 
 | Parameter | Type | | Description |
 |---|---|---|---|
 | `end` | [x, y] | required | End point. |
 | `start` | [x, y] | required | Start point (where the bubble is). |
 | `level` | id or name | optional | Level id or name (default: the lowest level). |
-| `name` | string | optional | Grid name (default: the next free number). |
+| `name` | string | optional | Grid name (default: the next name of its series). |
 
 ### `column_create`
 
@@ -685,16 +729,172 @@ No parameters.
 
 ### `stair_create`
 
-*edit* — Create a straight stair starting at `start` and rising along `direction` (degrees) up to the level above (or `height`). Risers follow the type.
+*edit* — Create a stair starting at `start` (the middle of its first riser) and rising along `direction` up to the level above (or `height`). Risers and treads follow the type: the fewest risers within its maximum, and a fixed tread or one from Blondel's formula (`2 × riser + tread`). `shape` lays it out straight, with a landing, L- or U-shaped, or around a center.
 
 | Parameter | Type | | Description |
 |---|---|---|---|
 | `start` | [x, y] | required | Start of the run (center of the first step's edge). |
-| `direction` | number | optional | Direction of the run in plan, degrees counter-clockwise from +X. |
+| `direction` | number | optional | Direction of the first flight in plan, degrees counter-clockwise from +X. |
+| `gap` | number | optional | Clear gap between the flights of a U-shaped stair, meters (default 0.1). |
 | `height` | number | optional | Height when there is no level above (default 3). |
+| `inner_radius` | number | optional | Radius of the inner edge of a spiral stair, meters (default 0.15). |
+| `landing` | number | optional | Landing depth along the first flight, meters (default: the stair width). |
 | `level` | id or name | optional | Level id or name (default: the lowest level). |
+| `shape` | string | optional | Plan shape: `straight` (default), `straight_landing`, `l_shaped`, `u_shaped` or `spiral`. |
+| `split` | integer | optional | Risers of the first flight (default: half of them). |
 | `top_level` | id or name | optional | Level the stair rises to (default: the level above). |
+| `turn` | string | optional | Side the stair turns to, walking up: `left` (default) or `right`. |
 | `type` | id or name | optional | Type id or name (default: the category's default type). |
+| `winders` | integer | optional | Winder treads in the corner of an L-shaped stair instead of a landing (2 to 6). |
+
+### `stair_check`
+
+*query* — Check a stair's steps: riser count and height, tread on the walking line, Blondel's step `2 × riser + tread` and the rules of its type they break (riser out of range, short tread, step out of the Blondel range, short landing).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `id` | integer | required | Stair element id. |
+
+### `stair_railings_add`
+
+*edit* — Add railings along the sides of a stair or a ramp: they follow its flights, landings and turns (at the pitch of the nosings on stairs), and go with it when it changes, moves or is deleted.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `id` | integer | required | Stair or ramp element id. |
+| `inset` | number | optional | Distance in from the edge of the stair, meters (default 0.05). |
+| `side` | string | optional | `left`, `right` or `both` (default), walking up. |
+| `type` | id or name | optional | Railing type id or name (default: the category's default type). |
+
+### `ramp_create`
+
+*edit* — Create a ramp starting at `start` (the middle of its foot) and rising along `direction` up to the level above (or `height`). Flights follow the type's rules: at most its steepest slope and its highest rise per flight, with landings between them; `shape` lays them out in line, L- or U-shaped (switchback), or as a helix. A project without a ramp type gets one.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `start` | [x, y] | required | Foot of the ramp (middle of its lower edge). |
+| `direction` | number | optional | Direction of the first flight in plan, degrees counter-clockwise from +X. |
+| `gap` | number | optional | Clear gap between the flights of a U-shaped ramp, meters (default 0.1). |
+| `height` | number | optional | Height when there is no level above (default 3). |
+| `inner_radius` | number | optional | Radius of the inner edge of a spiral ramp, meters (default 1.5). |
+| `landing` | number | optional | Landing length, meters (default: the type's shortest landing). |
+| `level` | id or name | optional | Level id or name (default: the lowest level). |
+| `shape` | string | optional | Plan shape: `straight` (default), `l_shaped`, `u_shaped` or `spiral`. |
+| `slope` | number | optional | Slope of the flights, percent (default: the steepest the type allows). |
+| `top_level` | id or name | optional | Level the ramp rises to (default: the level above). |
+| `turn` | string | optional | Side the ramp turns to, going up: `left` (default) or `right`. |
+| `type` | id or name | optional | Type id or name (default: the category's default type). |
+
+### `ramp_check`
+
+*query* — Check a ramp: its slope, flights (count, rise and run of each) and the rules of its type it breaks (too steep, a flight rising too high, a short landing).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `id` | integer | required | Ramp element id. |
+
+### `roof_check`
+
+*query* — Check a roof against its covering: the least slope its tiles take and the roof's slopes, the area covered, the number of tiles and their weight, and its framing (purlins, rafters, battens and truss members: lengths, the number of trusses and the volume). The covering and framing are set on the roof's type (`type_set` with `covering` and `framing`).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `id` | integer | required | Roof element id. |
+
+### `mass_create`
+
+*edit* — Create a conceptual mass: `outline` extruded `height` up from its level (plus `base_offset`), or lofted to another outline (`top`, or the base outline set in by `top_inset`). Mass floors are taken at every level the mass spans unless `floors` lists them. A project without a mass type gets one.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `outline` | [[x, y], …] | required | Base outline `[[x, y], …]` in plan, closed (at least three points). |
+| `base_offset` | number | optional | Offset of the base from the level elevation, meters (default 0). |
+| `floors` | [id or name, …] | optional | Levels (ids or names) where mass floors are taken (default: every level the mass spans). |
+| `height` | number | optional | Height above the base, meters (default: up to the level above, else 3). |
+| `level` | id or name | optional | Level id or name (default: the lowest level). |
+| `top` | [[x, y], …] | optional | Top outline of a loft `[[x, y], …]` (default: the base outline, an extrusion). |
+| `top_inset` | number | optional | Loft to the base outline set in by this distance, meters (instead of `top`). |
+| `type` | id or name | optional | Type id or name (default: the category's default type). |
+
+### `mass_floors_set`
+
+*edit* — Choose the levels where a mass takes mass floors: `levels` (ids or names), or every level it spans when `levels` is left out; an empty list takes none.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `id` | integer | required | Mass element id. |
+| `levels` | [id or name, …] | optional | Levels (ids or names); left out: every level the mass spans. |
+
+### `mass_floors`
+
+*query* — The mass floors of a mass: for each, its level, elevation, area and perimeter (and outline), with the gross floor area and the volume.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `id` | integer | required | Mass element id. |
+
+### `mass_type_create`
+
+*edit* — Create a mass type, shown in `material` (default: the project's first material).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `material` | string | optional | Material name. |
+| `name` | string | optional | Type name (default: the template's mass name). |
+
+### `mass_face_move`
+
+*edit* — Push or pull a face of a mass `distance` meters outward (inward when negative): `top` changes its height, `bottom` its base offset and height, and `side` (with `side`, the index of the base outline's edge from that point to the next) moves that side, the sides beside it keeping their directions. A loft's sides are not moved.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `distance` | number | required | Distance outward, meters (negative: inward). |
+| `face` | string | required | `top`, `bottom` or `side`. |
+| `id` | integer | required | Mass element id. |
+| `side` | integer | optional | The side's edge of the base outline (with `face: "side"`). |
+
+### `mass_walls_create`
+
+*edit* — Walls by face: a wall over each side of a mass extruded straight up (`sides`: the base outline's edges, by default all), its exterior face on the mass's face, from the mass's base up its height. Walls meeting at the mass's corners join. A loft's slanted sides take no walls.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `id` | integer | required | Mass element id. |
+| `sides` | [id, …] | optional | Edges of the base outline to put walls on (default: every edge). |
+| `type` | id or name | optional | Wall type id or name (default: the category's default type). |
+
+### `mass_slabs_create`
+
+*edit* — Floors from mass floors: a floor on each mass floor of a mass (or those at `levels`), its outline the mass's at that level and its top at the level.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `id` | integer | required | Mass element id. |
+| `levels` | [id or name, …] | optional | Levels (ids or names) of the mass floors to build (default: all of them). |
+| `type` | id or name | optional | Floor type id or name (default: the category's default type). |
+
+### `mass_roof_create`
+
+*edit* — Roof by face: a flat roof on the top face of a mass, over its top outline, on the mass's level at the height of its top.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `id` | integer | required | Mass element id. |
+| `overhang` | number | optional | How far the eaves reach past the top outline, meters (default 0). |
+| `type` | id or name | optional | Roof type id or name (default: the category's default type). |
+
+### `ramp_type_create`
+
+*edit* — Create a ramp type: a slab `thickness` thick and `width` wide, within the accessibility rules given (by default 8.33 % slope, 0.80 m rise per flight and 1.20 m landings).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `max_flight_rise` | number | optional | Highest rise of one flight, meters (default 0.80). |
+| `max_slope` | number | optional | Steepest slope, percent (default 8.33). |
+| `min_landing` | number | optional | Shortest landing, meters (default 1.20). |
+| `name` | string | optional | Type name (default: the template's ramp name). |
+| `thickness` | number | optional | Slab thickness, meters (default 0.15). |
+| `width` | number | optional | Width, meters (default 1.2). |
 
 ### `railing_create`
 
@@ -815,7 +1015,7 @@ No parameters.
 
 ### `mep_connect`
 
-*edit* — Connect plumbing fixtures and electrical devices to the nearest pipe or conduit of their level (or riser of another floor passing through it). A fixture gets a branch to the nearest sanitary drain (falling towards it, with a drop from the floor), and to the nearest cold (and, when it takes it, hot) water pipe; a device gets a conduit to the nearest conduit, with a drop from its mounting height, carrying its circuit. Branches end on the runs, which forms tees. `system` connects only to that system or circuit.
+*edit* — Connect plumbing fixtures and electrical devices to the nearest pipe or conduit of their level (or riser of another floor passing through it). A fixture gets a branch to the nearest sanitary drain (falling towards it, with a drop from the floor), and to the nearest cold (and, when it takes it, hot) water pipe; a device gets a conduit to the nearest conduit, with a drop from its mounting height, carrying its circuit. A component with connectors gets a branch from each connector to the nearest run of a system of the connector's kind, from the connector's position and of its diameter (leaving vertically or horizontally as the connector points). Branches end on the runs, which forms tees. `system` connects only to that system or circuit.
 
 | Parameter | Type | | Description |
 |---|---|---|---|
@@ -979,7 +1179,7 @@ No parameters.
 
 ### `trim_corner`
 
-*edit* — Trim or extend two linear elements (walls, beams, grids) to meet at a corner; each pick point marks the part of its element to keep.
+*edit* — Trim or extend two linear elements (walls, beams, grids) to meet at a corner; each pick point marks the part of its element to keep. Arc walls meet lines and other arcs where their circles cross them.
 
 | Parameter | Type | | Description |
 |---|---|---|---|
@@ -990,7 +1190,7 @@ No parameters.
 
 ### `trim_extend`
 
-*edit* — Trim or extend a linear element to the line of a reference element; the pick point marks the part to keep.
+*edit* — Trim or extend a linear element to the line of a reference element (the circle of an arc wall); the pick point marks the part to keep. Arc walls trim and extend along their circle.
 
 | Parameter | Type | | Description |
 |---|---|---|---|
@@ -1018,12 +1218,14 @@ No parameters.
 
 ### `element_align`
 
-*edit* — Move a linear element parallel onto the line of a reference element.
+*edit* — Align an element onto a line of a reference element, in plan: the edge picked on the element (a wall's face, a column's side) moves onto the line picked on the reference (a face or side, or the location line of a grid or of an element picked without a point). When the two are not parallel the element first turns about the picked point of its edge. An arc wall moves onto the circle of a concentric arc wall (its radius changes). Alignment is in plan, so the elements may be on different levels (a column above onto the face of the column below).
 
 | Parameter | Type | | Description |
 |---|---|---|---|
 | `id` | integer | required | Element to move. |
 | `reference` | integer | required | Element whose line it moves onto. |
+| `pick` | [x, y] | optional | Plan point `[x, y]` near the edge of `id` that moves onto the reference line (the edge of its plan outline nearest to it). Without it a linear element moves its location line, and other elements their insertion point, onto the line. |
+| `reference_pick` | [x, y] | optional | Plan point `[x, y]` near the line of `reference` to align to (the edge of its plan outline nearest to it, such as a wall face). Without it the reference's location line is used, which a column or component does not have. |
 
 ### `element_move_end`
 
@@ -1034,6 +1236,16 @@ No parameters.
 | `end` | string | required | `start` or `end`. |
 | `id` | integer | required | Element id. |
 | `point` | [x, y] | required | New position of that end. |
+
+### `grids_align_ends`
+
+*edit* — Give grids the extents of a reference grid, so their bubbles line up: each grid parallel to the reference (within 1°) has its ends moved along its own line onto the lines through the reference's ends perpendicular to it (each end to the reference end on its side). Grids that are not parallel and pinned grids are left alone.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `reference` | integer | required | Id of the reference grid. |
+| `ends` | string | optional | Which ends move: `both` (default), `start` (the bubble end) or `end`. |
+| `grids` | [id, …] | optional | Ids of the grids to align (default: every other grid parallel to the reference). |
 
 ### `element_set`
 
@@ -1061,18 +1273,57 @@ No parameters.
 
 ### `dimension_create`
 
-*edit* — Place a dimension in a 2D view (points in the view's drawing coordinates: plan X/Y in plans; horizontal position and height in elevations and sections). Its ends follow the elements (or level lines) their points lie on, so it keeps measuring them. Aligned dimensions measure from `a` to `b`, linear ones along a horizontal or vertical `direction`, angular ones the angle at `vertex` between the rays through `a` and `b`, radial and diameter ones the arc centered at `a` through `b`.
+*edit* — Place a dimension in a 2D view (points in the view's drawing coordinates: plan X/Y in plans; horizontal position and height in elevations and sections). Its ends follow the elements (or level lines) their points lie on, so it keeps measuring them. Aligned dimensions measure from `a` to `b`, linear ones along a horizontal or vertical `direction`, ordinate ones from the origin `a` to `b` along that direction (a running dimension; see `dimension_ordinate_create`), angular ones the angle at `vertex` between the rays through `a` and `b`, radial and diameter ones the arc centered at `a` through `b`.
 
 | Parameter | Type | | Description |
 |---|---|---|---|
 | `a` | [x, y] | required | First point (center for radial and diameter). |
 | `b` | [x, y] | required | Second point (a point on the arc for radial and diameter). |
 | `view` | id or name | required | View id or name. |
-| `direction` | string | optional | Linear dimensions: `horizontal` or `vertical` (default: the larger extent). |
-| `kind` | string | optional | `aligned` (default), `linear`, `angular`, `radial` or `diameter`. |
+| `direction` | string | optional | Linear and ordinate dimensions: `horizontal` or `vertical` (default: the larger extent). |
+| `kind` | string | optional | `aligned` (default), `linear`, `ordinate`, `angular`, `radial` or `diameter`. |
 | `offset` | number | optional | Distance of the dimension line from `a` (left of a→b positive), or the arc radius for angular ones (default 1). |
 | `type` | id or name | optional | Dimension type id or name (default: the default dimension type). |
 | `vertex` | [x, y] | optional | Vertex of an angular dimension. |
+
+### `tag_move`
+
+*edit* — Move the tag of an element in a plan (the tag of a door, window, beam, column or footing): by `delta` from where it is, to `offset` from its default spot, or back there with `reset`. A tag moved away from its element gets a leader to it. Each plan keeps its own tag positions.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `id` | integer | required | Id of the element the tag names. |
+| `view` | id or name | required | Plan id or name. |
+| `delta` | [x, y] | optional | Move by `[dx, dy]` meters in plan. |
+| `offset` | [x, y] | optional | Place the tag `[dx, dy]` meters from its default spot. |
+| `reset` | boolean | optional | Put the tag back in its default spot. |
+
+### `dimension_chain_create`
+
+*edit* — Place a chain of dimensions on one dimension line (continuous dimensioning): one dimension from each point to the next, all measured along the same direction and drawn on the same line, in one undo step. Points are in the view's drawing coordinates, as for `dimension_create`, and each end follows the element (or level line) it lies on. In an aligned chain, segments along the direction are aligned dimensions and the others measure along that direction.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `points` | [[x, y], …] | required | The measured points in order (at least 2, at most 500). |
+| `view` | id or name | required | View id or name. |
+| `angle` | number | optional | Direction to measure along, degrees counter-clockwise from the X axis (overrides `direction` and the direction of the first two points). |
+| `direction` | string | optional | Linear chains: `horizontal` or `vertical` (default: the larger extent of the first two points). |
+| `kind` | string | optional | `aligned` (default: along the first two points) or `linear` (horizontal or vertical). |
+| `offset` | number | optional | Distance of the dimension line from the first point, positive to the left of the direction (default 1). |
+| `type` | id or name | optional | Dimension type id or name (default: the default dimension type). |
+
+### `dimension_ordinate_create`
+
+*edit* — Place running (ordinate) dimensions on one dimension line: one dimension from the origin (the first point) to each other point, measured along the same direction, each showing its running total from the origin, in one undo step. Points are in the view's drawing coordinates, as for `dimension_create`, and each end follows the element (or level line) it lies on, so the totals follow the model; giving one a new value with `dimension_set_value` moves what its point measures, keeping the origin.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `points` | [[x, y], …] | required | The origin, then the measured points (at least 2 in all, at most 500). |
+| `view` | id or name | required | View id or name. |
+| `angle` | number | optional | Direction to measure along, degrees counter-clockwise from the X axis (overrides `direction`). |
+| `direction` | string | optional | `horizontal` or `vertical` (default: along the origin and the second point). |
+| `offset` | number | optional | Distance of the dimension line from the origin, positive to the left of the direction (default 1). |
+| `type` | id or name | optional | Dimension type id or name (default: the default dimension type). |
 
 ### `dimension_set_value`
 
@@ -1151,12 +1402,212 @@ No parameters.
 
 ### `component_create`
 
-*edit* — Create a component type: `def` holds its parameters and pieces, shaped like a component type's `params.def` in `type_get`. A piece's `shape` is a `Box` {x, y, z, width, depth, height}, a `Cylinder` {x, y, z, radius, height}, an `Extrusion` {points: [[x, y], …], z, height} (a plan outline extruded up), a `Profile` {plane: `Plan`, `Front` or `Side`, points: [{u, v, radius}, …], offset, depth} (lines and arcs drawn on a plane: u, v are x, y in plan, x, z from the front and y, z from the side; the plane stands at `offset` on the remaining axis and extrudes `depth` along it; a point's optional `radius` makes the segment to the next point an arc, positive bulging outwards) or a `Revolution` {plane, points, offset, axis, angle} (the profile turned about the line u = axis of its plane). Every field is an expression over the parameters (meters, degrees). A piece with `void: true` is cut out of the solid pieces it overlaps.
+*edit* — Create a component type: `def` holds its parameters and pieces, shaped like a component type's `params.def` in `type_get`. A piece's `shape` is a `Box` {x, y, z, width, depth, height}, a `Cylinder` {x, y, z, radius, height}, an `Extrusion` {points: [[x, y], …], z, height} (a plan outline extruded up), a `Profile` {plane: `Plan`, `Front` or `Side`, points: [{u, v, radius}, …], offset, depth} (lines and arcs drawn on a plane: u, v are x, y in plan, x, z from the front and y, z from the side; the plane stands at `offset` on the remaining axis and extrudes `depth` along it; a point's optional `radius` makes the segment to the next point an arc, positive bulging outwards) or a `Revolution` {plane, points, offset, axis, angle} (the profile turned about the line u = axis of its plane). Every field is an expression over the parameters (meters, degrees). A piece with `void: true` is cut out of the solid pieces it overlaps; one with `plan_only: true` is a plan symbol (a door's swing), drawn in plans and not a solid. A `kind` of `Door` or `Window` with an `opening` {width, height, sill, own_symbol} (expressions) makes a door or window type, placed with `door_create` or `window_create`: it cuts that opening in its wall; its frame has x along the wall from the opening's center, y across it (towards the side a door opens to), z up from the sill, and `WallThickness` is the wall's thickness. `connectors` [{name, system: `ColdWater`, `HotWater`, `Sanitary`, `Vent`, `Rainwater`, `Power` or `Lighting`, x, y, z, direction: `Down`, `Up`, `Front` (-y), `Back` (+y), `Left` (-x) or `Right` (+x), diameter}] are where `mep_connect` joins pipes and conduits (a toilet's inlet and outlet).
 
 | Parameter | Type | | Description |
 |---|---|---|---|
 | `def` | JSON | required | The definition: `params` (name, value, kind, instance) and `items` (pieces), shaped like a component type's `params.def` in `type_get`. |
 | `name` | string | required | Name of the component and of its first type. |
+
+### `component_get`
+
+*query* — The component of a type, as the modeling environment shows it: the definition, the value of every parameter and reference plane, the value of each dimension, the problems found, and the component's types with their parameter values.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `type` | id or name | required | A type of the component: id or name. |
+
+### `component_param_add`
+
+*edit* — Add a parameter to a component (to every type, with the same value).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `name` | string | required | Name used in expressions (letters, digits and `_`, not starting with a digit). |
+| `type` | id or name | required | A type of the component: id or name. |
+| `instance` | boolean | optional | Elements may override the value. |
+| `kind` | string | optional | `length` (default), `angle` or `number`. |
+| `value` | number | optional | Value (meters for lengths, degrees for angles; default 0). |
+
+### `component_param_set`
+
+*edit* — Change a component parameter: its value (for the type named only), kind, whether elements may override it, or its name (every expression, dimension and type follows a rename).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `name` | string | required | The parameter's current name. |
+| `type` | id or name | required | A type of the component: id or name (the value changes for this type). |
+| `instance` | boolean | optional | Elements may override the value. |
+| `kind` | string | optional | `length`, `angle` or `number`. |
+| `rename` | string | optional | New name. |
+| `value` | number | optional | New value for the type named. |
+
+### `component_param_delete`
+
+*edit* — Remove a component parameter; refused while an expression reads it. Dimensions it labels lose the label (their planes keep their place).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `name` | string | required | The parameter's name. |
+| `type` | id or name | required | A type of the component: id or name. |
+
+### `component_ref_plane_add`
+
+*edit* — Add a reference plane to a component: square to `axis` (`x`: a left/right plane, `y`: front/back, `z`: a height), at the position `at`, an expression that may read parameters and other planes (`Left + Width`).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `at` | string | required | Position along the axis (meters): a number or an expression. |
+| `axis` | string | required | `x`, `y` or `z`. |
+| `type` | id or name | required | A type of the component: id or name. |
+| `name` | string | optional | Name (default `Plane1`, `Plane2`…). |
+
+### `component_ref_plane_set`
+
+*edit* — Move or rename a reference plane: `at` is its new position (an expression); a rename follows into every expression and dimension.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `name` | string | required | The plane's current name. |
+| `type` | id or name | required | A type of the component: id or name. |
+| `at` | string | optional | New position: a number or an expression. |
+| `rename` | string | optional | New name. |
+
+### `component_ref_plane_delete`
+
+*edit* — Remove a reference plane and the dimensions on it; refused while an expression reads it.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `name` | string | required | The plane's name. |
+| `type` | id or name | required | A type of the component: id or name. |
+
+### `component_ref_line_add`
+
+*edit* — Add a reference line on one of the sketch planes (`plan`, `front` or `side`, standing at `offset` along its normal axis): its ends are `[u, v]` pairs of expressions in that plane.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `end` | [old, new] | required | Second end `[u, v]`. |
+| `plane` | string | required | `plan`, `front` or `side`. |
+| `start` | [old, new] | required | First end `[u, v]`: numbers or expressions. |
+| `type` | id or name | required | A type of the component: id or name. |
+| `name` | string | optional | Name (default `Line1`, `Line2`…). |
+| `offset` | string | optional | Position of the sketch plane along its normal axis (default 0). |
+
+### `component_ref_line_delete`
+
+*edit* — Remove a reference line.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `name` | string | required | The line's name. |
+| `type` | id or name | required | A type of the component: id or name. |
+
+### `component_dimension_add`
+
+*edit* — Dimension two parallel reference planes in a view (`plan`, `front` or `side`, one that sees them edge-on). With `label`, a length parameter drives it: the second plane moves to the first plus the parameter (the parameter is created with the current distance when missing).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `from` | string | required | The plane it measures from. |
+| `to` | string | required | The plane it measures to (the one a label moves). |
+| `type` | id or name | required | A type of the component: id or name. |
+| `view` | string | required | `plan`, `front` or `side`. |
+| `label` | string | optional | Parameter that drives the distance. |
+| `place` | number | optional | Where the dimension line sits across the planes (meters, default 0). |
+
+### `component_dimension_set`
+
+*edit* — Change a dimension between reference planes: label it with a parameter (`label`, created when missing), take its label off (`label: ""`, the planes stay), move its line (`place`) or give it a new `value` (the label's parameter for this type, or the moving plane's position).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `index` | integer | required | The dimension's index (from `component_get`). |
+| `type` | id or name | required | A type of the component: id or name. |
+| `label` | string | optional | Parameter that drives it; empty to take the label off. |
+| `place` | number | optional | Where the dimension line sits across the planes. |
+| `value` | number | optional | New distance (meters). |
+
+### `component_dimension_delete`
+
+*edit* — Remove a dimension between reference planes (the planes stay).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `index` | integer | required | The dimension's index. |
+| `type` | id or name | required | A type of the component: id or name. |
+
+### `component_equal_add`
+
+*edit* — Keep the plane `middle` halfway between the parallel planes `a` and `b` (an equality, EQ): its position becomes `(a + b) / 2`, so it follows whatever moves them. Shown in `view` (`plan`, `front` or `side`) as two equal dimensions.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `a` | string | required | One outer plane. |
+| `b` | string | required | The other outer plane. |
+| `middle` | string | required | The plane kept halfway (not an origin plane). |
+| `type` | id or name | required | A type of the component: id or name. |
+| `view` | string | required | `plan`, `front` or `side`. |
+| `place` | number | optional | Where the dimensions' line sits across the planes (meters, default 0). |
+
+### `component_equal_delete`
+
+*edit* — Remove an equality (EQ); its middle plane stays halfway as written.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `index` | integer | required | The equality's index (from `component_get`). |
+| `type` | id or name | required | A type of the component: id or name. |
+
+### `component_piece_add`
+
+*edit* — Add a piece drawn as a sketch on the `plan`, `front` or `side` plane: an `extrusion` of the closed outline from `start` to `end` along the plane's normal (Z for the plan, Y for the front, X for the side); a `revolution` about the line u = `axis` of the plane, `angle` degrees (default 360); a `sweep` of the closed outline (`points`: u to the left of the path, v along the normal) along the open `path` drawn on the plane at `start`, mitered at its corners; or a `blend` from the outline at `start` to the `top` outline at `end`. Coordinates are numbers or expressions; a reference plane's name locks a coordinate (or `start`, `end`, `axis`) to that plane, so the piece follows it. With `void`, the piece is cut out of the solid pieces it overlaps.
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `plane` | string | required | `plan`, `front` or `side`. |
+| `points` | [object, …] | required | The closed outline, in order (a sweep's section, a blend's bottom). |
+| `type` | id or name | required | A type of the component: id or name. |
+| `angle` | number or string | optional | Revolutions: degrees turned (default 360). |
+| `axis` | number or string | optional | Revolutions: the axis, u = `axis` in the sketch plane. |
+| `end` | number or string | optional | Extrusions and blends: where they end along the normal (default 0.1 past `start`). |
+| `kind` | string | optional | `extrusion` (default), `revolution`, `sweep` or `blend`. |
+| `material` | string | optional | Project material name. |
+| `name` | string | optional | Name (default `Piece1`, `Piece2`…). |
+| `path` | [object, …] | optional | Sweeps: the open path the section follows. |
+| `start` | number or string | optional | Where the sketch plane stands along its normal (default 0). |
+| `top` | [object, …] | optional | Blends: the closed outline at `end`. |
+| `void` | boolean | optional | Cut out of the solid pieces it overlaps. |
+
+### `component_piece_set`
+
+*edit* — Change a piece of a component: its name, material, whether it is a void or drawn in plans, and for sketched pieces their outline, `start`, `end` (extrusions), `axis` and `angle` (revolutions).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `index` | integer | required | The piece's index (from `component_get`). |
+| `type` | id or name | required | A type of the component: id or name. |
+| `angle` | number or string | optional | Revolutions: degrees turned. |
+| `axis` | number or string | optional | Revolutions: the axis, u = `axis` in the sketch plane. |
+| `end` | number or string | optional | Extrusions: where they end along the normal. |
+| `in_plan` | boolean | optional | Drawn in plans. |
+| `material` | string | optional | Project material name (empty for the default color). |
+| `name` | string | optional | New name. |
+| `path` | [object, …] | optional | Sweeps: new path. |
+| `points` | [object, …] | optional | New outline (a sweep's section, a blend's bottom). |
+| `start` | number or string | optional | Where the sketch plane stands along its normal. |
+| `top` | [object, …] | optional | Blends: new top outline. |
+| `void` | boolean | optional | Cut out of the solid pieces it overlaps. |
+
+### `component_piece_delete`
+
+*edit* — Remove a piece of a component (a component keeps at least one).
+
+| Parameter | Type | | Description |
+|---|---|---|---|
+| `index` | integer | required | The piece's index. |
+| `type` | id or name | required | A type of the component: id or name. |
 
 ### `material_create`
 

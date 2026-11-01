@@ -63,6 +63,16 @@ pub enum ScheduleField {
     PhaseCreated,
     /// The phase the element is demolished in.
     PhaseDemolished,
+    /// Gross floor area of a mass: the sum of its mass floors.
+    FloorArea,
+    /// Number of tiles on a roof.
+    TileCount,
+    /// Total length of a roof's framing members.
+    FramingLength,
+    /// Volume of a roof's framing members.
+    FramingVolume,
+    /// How many mass floors a mass has.
+    FloorCount,
 }
 
 impl ScheduleField {
@@ -111,6 +121,11 @@ impl ScheduleField {
             ScheduleField::DrainUnits => "col-drain-units",
             ScheduleField::PhaseCreated => "col-phase-created",
             ScheduleField::PhaseDemolished => "col-phase-demolished",
+            ScheduleField::FloorArea => "col-floor-area",
+            ScheduleField::FloorCount => "col-floor-count",
+            ScheduleField::TileCount => "col-tile-count",
+            ScheduleField::FramingLength => "col-framing-length",
+            ScheduleField::FramingVolume => "col-framing-volume",
         }
     }
 
@@ -122,15 +137,26 @@ impl ScheduleField {
         let phases = [F::PhaseCreated, F::PhaseDemolished];
         let specific: &[F] = match category {
             Category::Wall => &[F::Length, F::Height, F::Thickness, F::Area, F::Volume, F::Function, F::Structural],
-            Category::Door => &[F::Width, F::Height, F::Sill, F::Host],
-            Category::Window => &[F::Width, F::Height, F::Sill, F::Host],
+            Category::Door => &[F::Width, F::Height, F::Sill, F::Host, F::ComponentName],
+            Category::Window => &[F::Width, F::Height, F::Sill, F::Host, F::ComponentName],
             Category::Floor | Category::Ceiling => &[F::Thickness, F::Area, F::Perimeter, F::Volume],
-            Category::Roof => &[F::Thickness, F::Area, F::Perimeter, F::Volume],
+            Category::Roof => &[
+                F::Thickness,
+                F::Area,
+                F::Perimeter,
+                F::Volume,
+                F::Slope,
+                F::TileCount,
+                F::Weight,
+                F::FramingLength,
+                F::FramingVolume,
+            ],
             Category::Column => &[F::Section, F::Height, F::Volume, F::Material, F::Structural],
             Category::Beam => &[F::Section, F::Length, F::CutLength, F::Volume, F::Material],
             Category::Foundation => &[F::Section, F::Length, F::Area, F::Thickness, F::Volume, F::Material],
             Category::Rebar => &[F::Host, F::Diameter, F::BarCount, F::BarLength, F::Length, F::Weight, F::Material],
             Category::Stair => &[F::Width, F::Risers, F::RiserHeight, F::Run, F::Volume],
+            Category::Ramp => &[F::Width, F::Slope, F::Run, F::Volume],
             Category::Railing => &[F::Length, F::Height],
             Category::Pipe => &[F::Diameter, F::Length, F::System, F::Slope, F::Material],
             Category::Conduit => &[F::Diameter, F::Length, F::System, F::Material],
@@ -145,6 +171,7 @@ impl ScheduleField {
                 F::Power,
                 F::DrainUnits,
             ],
+            Category::Mass => &[F::Height, F::FloorCount, F::FloorArea, F::Volume],
             Category::Room => {
                 return vec![
                     F::Number,
@@ -159,7 +186,7 @@ impl ScheduleField {
                     F::PhaseDemolished,
                 ];
             }
-            Category::Grid | Category::Dimension | Category::Text => return Vec::new(),
+            Category::Grid | Category::Dimension | Category::Text | Category::CadImport => return Vec::new(),
         };
         common.iter().chain(specific).chain(&type_info).chain(&phases).copied().collect()
     }
@@ -190,12 +217,14 @@ impl ScheduleField {
             Category::Foundation => vec![F::Mark, F::Type, F::Level, F::Section, F::Thickness, F::Volume, F::Material],
             Category::Rebar => vec![F::Host, F::Type, F::Diameter, F::BarCount, F::BarLength, F::Length, F::Weight],
             Category::Stair => vec![F::Mark, F::Type, F::Level, F::Risers, F::RiserHeight, F::Run, F::Volume],
+            Category::Ramp => vec![F::Mark, F::Type, F::Level, F::Slope, F::Run, F::Volume],
             Category::Railing => vec![F::Mark, F::Type, F::Level, F::Length],
             Category::Pipe => vec![F::Type, F::System, F::Level, F::Diameter, F::Length, F::Slope],
             Category::Conduit => vec![F::Type, F::System, F::Level, F::Diameter, F::Length],
             Category::Component => vec![F::Mark, F::ComponentName, F::Type, F::Level, F::Width, F::Depth, F::Height],
             Category::Room => vec![F::Number, F::Name, F::Level, F::Area, F::Perimeter],
-            Category::Grid | Category::Dimension | Category::Text => Vec::new(),
+            Category::Mass => vec![F::Mark, F::Type, F::Level, F::Height, F::FloorCount, F::FloorArea, F::Volume],
+            Category::Grid | Category::Dimension | Category::Text | Category::CadImport => Vec::new(),
         }
     }
 }

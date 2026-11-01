@@ -36,9 +36,12 @@ pub fn category_icon(category: Category) -> Icon {
         Category::Column => Icon::Column,
         Category::Beam => Icon::Beam,
         Category::Stair => Icon::Stair,
+        Category::Ramp => Icon::Ramp,
         Category::Railing => Icon::Railing,
         Category::Component => Icon::Component,
         Category::Text => Icon::Text,
+        Category::CadImport => Icon::CadImport,
+        Category::Mass => Icon::Mass,
     }
 }
 
@@ -57,6 +60,7 @@ fn tool_icon(tool: &Tool) -> Icon {
         Tool::Split => Icon::Split,
         Tool::Offset => Icon::Offset,
         Tool::Align => Icon::Align,
+        Tool::PushPull => Icon::PushPull,
         Tool::ToggleJoin => Icon::Join,
         Tool::Measure => Icon::Measure,
         Tool::JoinGeometry { unjoin: false } => Icon::JoinGeometry,
@@ -226,6 +230,11 @@ fn icon_button(ui: &mut Ui, (icon, badge): (Icon, Option<Badge>), enabled: bool)
     response
 }
 
+/// A group of the component environment's ribbon.
+pub fn env_group(ui: &mut Ui, state: &mut AppState, caption: String, commands: &[UiCommand]) {
+    group(ui, caption, |ui| command_buttons(ui, state, commands));
+}
+
 /// A captioned group of ribbon buttons followed by a vertical divider.
 fn group(ui: &mut Ui, caption: String, add: impl FnOnce(&mut Ui)) {
     // Keep a group's buttons, caption and divider together in one cell.
@@ -316,29 +325,34 @@ fn command_big(ui: &mut Ui, state: &AppState, command: UiCommand, dropdown: bool
 
 /// The rich tooltip of a command: title and shortcut, what it does, why it
 /// is unavailable, and the engine command that scripts call for the same change.
+/// With detailed tooltips off (a preference), only the title, shortcut and
+/// why it is unavailable.
 pub fn command_tooltip(response: Response, state: &AppState, command: UiCommand, why: Option<String>) -> Response {
     let title = command.title(state);
+    let detailed = state.prefs.detailed_tooltips;
     response.on_hover_ui(|ui| {
         ui.set_max_width(300.0);
         ui.spacing_mut().item_spacing.y = 4.0;
         ui.horizontal(|ui| {
             ui.label(RichText::new(&title).family(theme::semibold()).color(PALETTE.text));
             if let Some(keys) = command.shortcut() {
-                key_cap(ui, keys);
+                key_cap(ui, &keys);
             }
         });
-        ui.label(theme::muted(command.description()));
+        if detailed {
+            ui.label(theme::muted(command.description()));
+        }
         if let Some(why) = &why {
             ui.label(RichText::new(t!("tip-unavailable", "reason" => why)).color(PALETTE.warning));
         }
-        if let Some(name) = command.engine() {
+        if let Some(name) = command.engine().filter(|_| detailed) {
             ui.label(RichText::new(t!("tip-engine", "command" => name)).size(11.0).color(PALETTE.text_faint));
         }
     })
 }
 
 /// A keyboard shortcut drawn as a key cap.
-fn key_cap(ui: &mut Ui, keys: &str) {
+pub(crate) fn key_cap(ui: &mut Ui, keys: &str) -> egui::Response {
     egui::Frame::new()
         .fill(PALETTE.surface)
         .stroke(Stroke::new(1.0, PALETTE.border))
@@ -346,7 +360,8 @@ fn key_cap(ui: &mut Ui, keys: &str) {
         .inner_margin(egui::Margin::symmetric(5, 1))
         .show(ui, |ui| {
             ui.label(RichText::new(keys).size(11.0).color(PALETTE.text_muted));
-        });
+        })
+        .response
 }
 
 /// A small quick access button for `command`.
@@ -390,6 +405,7 @@ pub fn ribbon(ui: &mut Ui, state: &mut AppState) {
             UiCommand::Dimension(DimensionMode::Aligned),
             UiCommand::Default3D,
             UiCommand::Section,
+            UiCommand::CloseInactiveViews,
         ] {
             command_icon(ui, state, command);
         }
@@ -516,7 +532,7 @@ fn ribbon_group_count(tab: RibbonTab) -> usize {
         RibbonTab::File => 5,
         RibbonTab::Architecture => 7,
         RibbonTab::Visualization => 4,
-        RibbonTab::Presentation => 7,
+        RibbonTab::Presentation => 9,
         RibbonTab::Modify => 7,
         RibbonTab::Structure => 8,
         RibbonTab::Mep => 6,
@@ -653,25 +669,11 @@ fn file_tab(ui: &mut Ui, state: &mut AppState) {
         Open, Save, SaveAs,
     };
     group(ui, t!("group-project"), |ui| command_buttons(ui, state, &[New, Open, Save, SaveAs, CloseProject]));
-    group(ui, t!("group-import"), |ui| command_buttons(ui, state, &[ImportIfc, ImportReference, ManageReferences]));
-    group(ui, t!("group-export"), |ui| command_buttons(ui, state, &[ExportIfc, ExportPdf, ExportSvg, ExportImage]));
-    group(ui, t!("group-settings"), |ui| {
-        ui.allocate_ui_with_layout(vec2(170.0, BUTTON_HEIGHT), Layout::top_down(Align::Min), |ui| {
-            ui.add_space(6.0);
-            language_picker(ui, state, 150.0);
-        });
-        ui.allocate_ui_with_layout(vec2(130.0, BUTTON_HEIGHT), Layout::top_down(Align::Min), |ui| {
-            ui.add_space(6.0);
-            ui.label(theme::muted(t!("settings-theme")).size(12.0));
-            let mut choice = state.theme;
-            egui::ComboBox::from_id_salt("theme").width(110.0).selected_text(choice.label()).show_ui(ui, |ui| {
-                for t in theme::ThemeChoice::ALL {
-                    ui.selectable_value(&mut choice, t, t.label());
-                }
-            });
-            actions::set_theme(ui.ctx(), state, choice);
-        });
+    group(ui, t!("group-import"), |ui| {
+        command_buttons(ui, state, &[ImportIfc, UiCommand::ImportCad, ImportReference, ManageReferences])
     });
+    group(ui, t!("group-export"), |ui| command_buttons(ui, state, &[ExportIfc, ExportPdf, ExportSvg, ExportImage]));
+    group(ui, t!("group-settings"), |ui| command_button(ui, state, UiCommand::Preferences));
     group(ui, t!("group-help"), |ui| command_buttons(ui, state, &[UiCommand::About, UiCommand::CheckUpdates]));
 }
 
@@ -694,14 +696,28 @@ fn place(category: Category) -> UiCommand {
 fn architecture_tab(ui: &mut Ui, state: &mut AppState) {
     use Category::*;
     let buttons = |list: &[Category]| list.iter().map(|c| place(*c)).collect::<Vec<_>>();
+    group(ui, t!("group-massing"), |ui| {
+        command_buttons(ui, state, &[place(Mass), UiCommand::PushPull]);
+        stacks(ui, state, &[&[UiCommand::MassWalls, UiCommand::MassSlabs, UiCommand::MassRoof]]);
+    });
     group(ui, t!("group-build"), |ui| command_buttons(ui, state, &buttons(&[Wall, Door, Window])));
     group(ui, t!("group-horizontal"), |ui| command_buttons(ui, state, &buttons(&[Floor, Ceiling, Roof])));
-    group(ui, t!("group-circulation"), |ui| command_buttons(ui, state, &buttons(&[Stair, Railing])));
+    group(ui, t!("group-circulation"), |ui| command_buttons(ui, state, &buttons(&[Stair, Ramp, Railing])));
     group(ui, t!("group-room"), |ui| command_button(ui, state, place(Room)));
     group(ui, t!("group-model"), |ui| {
-        command_buttons(ui, state, &[place(Component), UiCommand::NewComponent, UiCommand::LoadComponent]);
+        command_buttons(
+            ui,
+            state,
+            &[
+                place(Component),
+                UiCommand::NewComponent,
+                UiCommand::EditComponent,
+                UiCommand::LoadComponent,
+                UiCommand::ComponentLibrary,
+            ],
+        );
     });
-    group(ui, t!("group-datum"), |ui| command_button(ui, state, place(Grid)));
+    group(ui, t!("group-datum"), |ui| command_buttons(ui, state, &[place(Grid), UiCommand::AlignGridEnds]));
     group(ui, t!("group-selection"), |ui| command_button(ui, state, UiCommand::Select));
 }
 
@@ -724,7 +740,7 @@ fn structure_tab(ui: &mut Ui, state: &mut AppState) {
     group(ui, t!("group-documentation"), |ui| {
         stacks(ui, state, &[&[StructuralPlan, NumberStructure, StructuralSchedules]]);
     });
-    group(ui, t!("group-datum"), |ui| command_button(ui, state, place(Category::Grid)));
+    group(ui, t!("group-datum"), |ui| command_buttons(ui, state, &[place(Category::Grid), AlignGridEnds]));
     group(ui, t!("group-selection"), |ui| command_button(ui, state, Select));
 }
 
@@ -744,6 +760,7 @@ pub fn dimension_icon(mode: DimensionMode) -> Icon {
     match mode {
         DimensionMode::Aligned => Icon::Dimension,
         DimensionMode::Linear => Icon::DimLinear,
+        DimensionMode::Ordinate => Icon::DimOrdinate,
         DimensionMode::Angular => Icon::DimAngular,
         DimensionMode::Radial => Icon::DimRadial,
         DimensionMode::Diameter => Icon::DimDiameter,
@@ -876,6 +893,7 @@ fn presentation_tab(ui: &mut Ui, state: &mut AppState, inline: bool) {
             UiCommand::Dimension(Angular),
             UiCommand::Dimension(Radial),
             UiCommand::Dimension(Diameter),
+            UiCommand::Dimension(Ordinate),
         ];
         if inline {
             command_buttons(ui, state, &dimensions);
@@ -886,6 +904,8 @@ fn presentation_tab(ui: &mut Ui, state: &mut AppState, inline: bool) {
     group(ui, t!("group-text"), |ui| command_buttons(ui, state, &[UiCommand::Text, UiCommand::AddLeader]));
     group(ui, t!("group-tags"), |ui| command_button(ui, state, UiCommand::StructureTags));
     group(ui, t!("group-selection"), |ui| command_button(ui, state, UiCommand::Select));
+    group(ui, t!("group-navigate"), |ui| command_button(ui, state, UiCommand::ZoomFit));
+    group(ui, t!("group-windows"), |ui| command_button(ui, state, UiCommand::CloseInactiveViews));
 }
 
 fn manage_tab(ui: &mut Ui, state: &mut AppState) {
@@ -893,7 +913,43 @@ fn manage_tab(ui: &mut Ui, state: &mut AppState) {
     group(ui, t!("group-project"), |ui| command_buttons(ui, state, &[ProjectInfo, Units, Levels, Materials]));
     group(ui, t!("group-graphics"), |ui| command_buttons(ui, state, &[ViewTemplates, ViewFilters]));
     group(ui, t!("group-phasing"), |ui| command_button(ui, state, Phases));
-    group(ui, t!("group-macros"), |ui| command_buttons(ui, state, &[MacroRecord, MacroRun]));
+    group(ui, t!("group-macros"), |ui| {
+        command_button(ui, state, MacroRecord);
+        macro_menu(ui, state);
+    });
+}
+
+/// Run Macro: a menu of the macros in the macros folder (see Preferences)
+/// and Browse… for any other file.
+fn macro_menu(ui: &mut Ui, state: &mut AppState) {
+    let r = command_menu(ui, state, UiCommand::MacroRun);
+    egui::Popup::menu(&r).show(|ui| {
+        match state.prefs.macro_folder.clone() {
+            None => {
+                ui.label(theme::muted(t!("macro-no-folder")).size(12.0));
+            }
+            Some(folder) => {
+                let files = crate::preferences::macro_files(&folder);
+                if files.is_empty() {
+                    ui.label(theme::muted(t!("macro-none")).size(12.0));
+                }
+                egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                    for path in files {
+                        let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                        if ui.button(name).on_hover_text(path.display().to_string()).clicked() {
+                            state.ribbon_peek = false;
+                            actions::run_macro_file(state, &path);
+                        }
+                    }
+                });
+            }
+        }
+        ui.separator();
+        if ui.button(t!("pref-browse")).clicked() {
+            state.ribbon_peek = false;
+            actions::run_macro(state);
+        }
+    });
 }
 
 /// Context options for the active tool (options bar).
@@ -1109,7 +1165,23 @@ pub fn options_bar(ui: &mut Ui, state: &mut AppState) {
                 ui.label(theme::muted(t!("hint-grid")));
             }
             Tool::Dimension { mode, .. } => {
-                ui.label(theme::muted(crate::i18n::tr(mode.hint_key())));
+                if matches!(mode, DimensionMode::Aligned | DimensionMode::Linear) {
+                    let c = &mut state.dim_continuous;
+                    ui.selectable_value(c, false, t!("dim-single")).on_hover_text(t!("dim-single-tip"));
+                    ui.selectable_value(c, true, t!("dim-continuous")).on_hover_text(t!("dim-continuous-tip"));
+                    ui.separator();
+                }
+                let hint = if state.interaction.dim_chain.is_some_and(|c| c.ordinate) {
+                    t!("hint-dim-ordinate-next")
+                } else if state.interaction.dim_chain.is_some() {
+                    t!("hint-dim-chain")
+                } else {
+                    crate::i18n::tr(mode.hint_key())
+                };
+                let r = ui.label(theme::muted(hint));
+                if matches!(mode, DimensionMode::Aligned | DimensionMode::Linear | DimensionMode::Ordinate) {
+                    r.on_hover_text(t!("hint-dim-align"));
+                }
             }
             Tool::Text { .. } => crate::text_tool::options(ui, state, false),
             Tool::AddLeader { .. } => crate::text_tool::options(ui, state, true),
@@ -1144,9 +1216,8 @@ pub fn options_bar(ui: &mut Ui, state: &mut AppState) {
                 ui.separator();
                 ui.label(theme::muted(t!("hint-truss")));
             }
-            Tool::Stair { .. } => {
-                ui.label(theme::muted(t!("hint-stair")));
-            }
+            Tool::Stair { .. } => crate::stair_ui::tool_options(ui, state),
+            Tool::Ramp { .. } => crate::stair_ui::ramp_tool_options(ui, state),
             Tool::Pipe { type_id } => segment_options(ui, state, type_id, true),
             Tool::Conduit { type_id } => segment_options(ui, state, type_id, false),
             Tool::Component { type_id } if crate::tools::device_type(state.project(), type_id).is_some() => {
@@ -1221,6 +1292,10 @@ pub fn options_bar(ui: &mut Ui, state: &mut AppState) {
             }
             Tool::Measure => {
                 ui.label(theme::muted(t!("hint-measure")));
+            }
+            Tool::PushPull => {
+                let key = if state.interaction.push.is_some() { "hint-push-pull-drag" } else { "hint-push-pull" };
+                ui.label(theme::muted(crate::i18n::tr(key)));
             }
             Tool::JoinGeometry { unjoin } => {
                 let key = match (state.interaction.targets.is_empty(), unjoin) {

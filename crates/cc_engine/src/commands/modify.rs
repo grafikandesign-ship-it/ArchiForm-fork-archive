@@ -458,7 +458,8 @@ impl Command for GroupUngroup {
 }
 
 /// Trim or extend two linear elements (walls, beams, grids) to meet at a
-/// corner; each pick point marks the part of its element to keep.
+/// corner; each pick point marks the part of its element to keep. Arc walls
+/// meet lines and other arcs where their circles cross them.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TrimCorner {
@@ -485,8 +486,9 @@ impl Command for TrimCorner {
     }
 }
 
-/// Trim or extend a linear element to the line of a reference element; the
-/// pick point marks the part to keep.
+/// Trim or extend a linear element to the line of a reference element (the
+/// circle of an arc wall); the pick point marks the part to keep. Arc walls
+/// trim and extend along their circle.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TrimExtend {
@@ -498,10 +500,10 @@ pub struct TrimExtend {
     pub reference: u64,
 }
 
-fn line(s: &Session, id: u64) -> Result<(DVec2, DVec2)> {
+fn path(s: &Session, id: u64) -> Result<cc_core::wall_ops::Path> {
     let p = s.project();
     let e = p.element(refs::element(p, id)?).ok_or_else(|| EngineError::not_found("element"))?;
-    cc_core::wall_ops::line_of(e).ok_or_else(|| EngineError::invalid(format!("element {id} has no line")))
+    cc_core::wall_ops::path_of(e).ok_or_else(|| EngineError::invalid(format!("element {id} has no line")))
 }
 
 impl Command for TrimExtend {
@@ -510,9 +512,9 @@ impl Command for TrimExtend {
     fn run(self, s: &mut Session) -> Result<Value> {
         let id = refs::element(s.project(), self.id)?;
         not_pinned(s.project(), id)?;
-        let (r0, r1) = line(s, self.reference)?;
+        let reference = path(s, self.reference)?;
         let pick = point(self.pick)?;
-        edit(s, t!("tx-trim"), |e| Ok(e.trim_to(id, pick, r0, r1)?))?;
+        edit(s, t!("tx-trim"), |e| Ok(e.trim_to(id, pick, reference)?))?;
         Ok(super::created(s, id))
     }
 }
@@ -560,7 +562,14 @@ impl Command for ElementOffset {
     }
 }
 
-/// Move a linear element parallel onto the line of a reference element.
+/// Align an element onto a line of a reference element, in plan: the edge
+/// picked on the element (a wall's face, a column's side) moves onto the
+/// line picked on the reference (a face or side, or the location line of a
+/// grid or of an element picked without a point). When the two are not
+/// parallel the element first turns about the picked point of its edge. An
+/// arc wall moves onto the circle of a concentric arc wall (its radius
+/// changes). Alignment is in plan, so the elements may be on different
+/// levels (a column above onto the face of the column below).
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ElementAlign {
@@ -568,18 +577,119 @@ pub struct ElementAlign {
     pub id: u64,
     /// Element whose line it moves onto.
     pub reference: u64,
+    /// Plan point `[x, y]` near the edge of `id` that moves onto the reference line (the edge of
+    /// its plan outline nearest to it). Without it a linear element moves its location line, and
+    /// other elements their insertion point, onto the line.
+    #[serde(default)]
+    pub pick: Option<Point>,
+    /// Plan point `[x, y]` near the line of `reference` to align to (the edge of its plan outline
+    /// nearest to it, such as a wall face). Without it the reference's location line is used,
+    /// which a column or component does not have.
+    #[serde(default)]
+    pub reference_pick: Option<Point>,
+}
+
+/// The line of element `id` that Align uses: the edge of its plan outline
+/// nearest to `pick` (a wall face, a column side), else its location line
+/// (grids have only that). An arc wall gives its arc.
+pub fn align_line(
+    project: &cc_core::Project,
+    geom: &cc_geom::ModelGeometry,
+    id: ElementId,
+    pick: Option<DVec2>,
+) -> Option<cc_core::wall_ops::Path> {
+    use cc_core::wall_ops::{Path, path_of};
+    let path = project.element(id).and_then(path_of);
+    if let Some(Path::Arc(_)) = path {
+        return path;
+    }
+    pick.and_then(|at| geom.nearest_plan_edge(id, at)).map(|(a, b)| Path::Line(a, b)).or(path)
+}
+
+/// The turn (radians, within ±90°) that makes direction `from` parallel to `to`.
+fn turn_to_parallel(from: DVec2, to: DVec2) -> f64 {
+    let angle = from.perp_dot(to).atan2(from.dot(to));
+    let half = std::f64::consts::FRAC_PI_2;
+    if angle > half {
+        angle - std::f64::consts::PI
+    } else if angle <= -half {
+        angle + std::f64::consts::PI
+    } else {
+        angle
+    }
 }
 
 impl Command for ElementAlign {
     const NAME: &'static str = "element_align";
     const KIND: CommandKind = CommandKind::Edit;
     fn run(self, s: &mut Session) -> Result<Value> {
+        use cc_core::wall_ops::{EditError, Path};
         let id = refs::element(s.project(), self.id)?;
         not_pinned(s.project(), id)?;
-        let (r0, r1) = line(s, self.reference)?;
-        edit(s, t!("tx-align"), |e| Ok(e.align_to(id, r0, r1)?))?;
+        let reference_id = refs::element(s.project(), self.reference)?;
+        let pick = self.pick.map(point).transpose()?;
+        let reference_pick = self.reference_pick.map(point).transpose()?;
+        s.geometry();
+        let (project, geom) = (&s.doc.project, s.geom());
+        let reference = align_line(project, geom, reference_id, reference_pick).ok_or_else(|| {
+            EngineError::invalid(format!(
+                "element {} has no line: give reference_pick near the edge to align to",
+                self.reference
+            ))
+        })?;
+        let moved = align_line(project, geom, id, pick);
+        // Arc walls onto concentric arcs.
+        if let (Some(Path::Arc(_)), Path::Arc(_)) = (&moved, &reference) {
+            edit(s, t!("tx-align"), |e| Ok(e.align_to(id, reference)?))?;
+            return Ok(super::created(s, id));
+        }
+        let Path::Line(r0, r1) = reference else { return Err(EditError::Curved.into()) };
+        let v = (r1 - r0).normalize_or_zero();
+        if v == DVec2::ZERO {
+            return Err(EditError::Degenerate.into());
+        }
+        // The point of the element that lands on the reference line, and the
+        // direction of its edge (none for a lone insertion point).
+        let (on, dir) = match moved {
+            Some(Path::Line(a, b)) => {
+                let u = (b - a).normalize_or_zero();
+                if u == DVec2::ZERO {
+                    return Err(EditError::Degenerate.into());
+                }
+                let at = pick.map_or(a, |p| a + u * (p - a).dot(u));
+                (at, Some(u))
+            }
+            Some(Path::Arc(_)) => return Err(EditError::Curved.into()),
+            None => (insertion_point(s, id)?, None),
+        };
+        let turn = dir.map_or(0.0, |u| turn_to_parallel(u, v));
+        let n = v.perp();
+        let shift = n * (r0 - on).dot(n);
+        let mut t = PlanTransform::translate(shift);
+        if turn.abs() > 1e-9 {
+            t = PlanTransform::rotate_about(on, turn).then(t);
+        }
+        edit(s, t!("tx-align"), |e| {
+            e.transform_elements(&[id], &t);
+            Ok(())
+        })?;
         Ok(super::created(s, id))
     }
+}
+
+/// Where an element without a location line stands in plan: a column's or
+/// component's position, else the center of its outline.
+fn insertion_point(s: &mut Session, id: ElementId) -> Result<DVec2> {
+    match s.project().element(id).map(|e| &e.kind) {
+        Some(ElementKind::Column(c)) => return Ok(c.position),
+        Some(ElementKind::Component(c)) => return Ok(c.position),
+        _ => {}
+    }
+    let solids = s.geometry().solids_of(id).filter_map(|solid| solid.bounds());
+    let bounds = solids.reduce(|(a, b), (c, d)| (a.min(c), b.max(d)));
+    let (lo, hi) =
+        bounds.ok_or_else(|| EngineError::invalid(format!("element {} has no outline to align by", id.0)))?;
+    Ok(DVec2::new(lo.x + hi.x, lo.y + hi.y) * 0.5)
 }
 
 /// Move one end of a wall, beam or grid (joined wall ends follow).
@@ -604,6 +714,85 @@ impl Command for ElementMoveEnd {
         let to = point(self.point)?;
         edit(s, t!("tx-modify"), |e| Ok(e.move_endpoint(id, start, to)?))?;
         Ok(super::created(s, id))
+    }
+}
+
+/// Give grids the extents of a reference grid, so their bubbles line up:
+/// each grid parallel to the reference (within 1°) has its ends moved along
+/// its own line onto the lines through the reference's ends perpendicular
+/// to it (each end to the reference end on its side). Grids that are not
+/// parallel and pinned grids are left alone.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GridsAlignEnds {
+    /// Id of the reference grid.
+    pub reference: u64,
+    /// Ids of the grids to align (default: every other grid parallel to the reference).
+    #[serde(default)]
+    pub grids: Vec<u64>,
+    /// Which ends move: `both` (default), `start` (the bubble end) or `end`.
+    #[serde(default)]
+    pub ends: Option<String>,
+}
+
+impl Command for GridsAlignEnds {
+    const NAME: &'static str = "grids_align_ends";
+    const KIND: CommandKind = CommandKind::Edit;
+    fn run(self, s: &mut Session) -> Result<Value> {
+        let p = s.project();
+        let grid_of = |id: ElementId| match p.element(id).map(|e| &e.kind) {
+            Some(ElementKind::Grid(g)) => Ok(g),
+            _ => Err(EngineError::invalid(format!("element {} is not a grid", id.0))),
+        };
+        let reference_id = refs::element(p, self.reference)?;
+        let reference = grid_of(reference_id)?.clone();
+        let (start, end) = match self.ends.as_deref().unwrap_or("both") {
+            "both" => (true, true),
+            "start" => (true, false),
+            "end" => (false, true),
+            other => return Err(EngineError::invalid(format!("ends must be 'both', 'start' or 'end', not '{other}'"))),
+        };
+        let ids: Vec<ElementId> = if self.grids.is_empty() {
+            super::create::grids(p).map(|(id, _)| id).collect()
+        } else {
+            let ids = refs::elements(p, &self.grids)?;
+            for id in &ids {
+                grid_of(*id)?;
+            }
+            ids
+        };
+        let ids: Vec<ElementId> = ids.into_iter().filter(|id| *id != reference_id).collect();
+        let (free, pinned) = unpinned(p, ids);
+        let mut lines: Vec<(ElementId, (DVec2, DVec2))> = Vec::new();
+        let mut not_parallel: Vec<ElementId> = Vec::new();
+        for id in free {
+            let Ok(g) = grid_of(id) else { continue };
+            match cc_core::grid::aligned_ends(g, &reference, start, end) {
+                Some((a, b)) if g.start.distance(a) > 1e-9 || g.end.distance(b) > 1e-9 => lines.push((id, (a, b))),
+                Some(_) => {}
+                None => not_parallel.push(id),
+            }
+        }
+        // Explicit ids that are not parallel are reported; by default they are just other grids.
+        if self.grids.is_empty() {
+            not_parallel.clear();
+        }
+        let changed: Vec<ElementId> = lines.iter().map(|(id, _)| *id).collect();
+        if !lines.is_empty() {
+            edit(s, t!("tx-align-grid-ends"), |e| {
+                for (id, (a, b)) in &lines {
+                    if let Some(ElementKind::Grid(g)) = e.element_mut(*id).map(|el| &mut el.kind) {
+                        (g.start, g.end) = (*a, *b);
+                    }
+                }
+                Ok(())
+            })?;
+        }
+        Ok(json!({
+            "changed": ids_json(&changed),
+            "pinned_skipped": ids_json(&pinned),
+            "not_parallel": ids_json(&not_parallel),
+        }))
     }
 }
 
