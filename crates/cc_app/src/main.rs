@@ -1,4 +1,4 @@
-//! ConstructCAD — open source BIM authoring.
+//! ArchiForm — personal BIM authoring.
 
 // Release builds on Windows open no console window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -52,6 +52,8 @@ mod update_install;
 mod view3d;
 mod view_cube;
 
+pub(crate) const APP_NAME: &str = "ArchiForm";
+
 fn main() -> eframe::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     // Panics are logged to the crash log (release builds on Windows have no console).
@@ -60,7 +62,7 @@ fn main() -> eframe::Result<()> {
     let viewport = egui::ViewportBuilder::default()
         .with_inner_size([1440.0, 900.0])
         .with_min_inner_size([900.0, 600.0])
-        .with_title("ConstructCAD")
+        .with_title(APP_NAME)
         .with_icon(app_icon());
     // The Wayland app id / X11 class names the desktop file (packaging/linux),
     // so desktops show its icon. eframe keeps its settings under the same
@@ -81,7 +83,7 @@ fn main() -> eframe::Result<()> {
         };
         let args = args.clone();
         let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            eframe::run_native("ConstructCAD", options, Box::new(|cc| Ok(Box::new(app::ConstructApp::new(cc, args)))))
+            eframe::run_native(APP_NAME, options, Box::new(|cc| Ok(Box::new(app::ConstructApp::new(cc, args)))))
         }));
         match run {
             Ok(Ok(())) => return Ok(()),

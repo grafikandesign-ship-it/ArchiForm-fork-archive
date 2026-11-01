@@ -438,9 +438,9 @@ impl ConstructApp {
 
         let title = if self.state.project_open {
             let dirty = if self.state.session.doc.is_dirty() { " *" } else { "" };
-            format!("ConstructCAD — {}{dirty}", self.state.project().info.name)
+            format!("{} — {}{dirty}", crate::APP_NAME, self.state.project().info.name)
         } else {
-            "ConstructCAD".to_string()
+            crate::APP_NAME.to_string()
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
 
