@@ -40,7 +40,7 @@ The showcase house, built by [`examples/showcase.ccmacro`](examples/showcase.ccm
 
 ## Installing
 
-Each [release](https://github.com/francisreboucas/constructcad/releases) has installers, plain archives and a `SHA256SUMS.txt` to check them against:
+Each [ArchiForm release](https://github.com/grafikandesign-ship-it/constructcad/releases) has installers, plain archives and a `SHA256SUMS.txt` to check them against:
 
 | System | Installer | Archive |
 |---|---|---|
@@ -66,7 +66,7 @@ The bundled example project was authored in Portuguese, so its view names are in
 
 ### Update notice
 
-At startup (at most once a day) the app asks the GitHub API for the latest release and, if it is newer, shows a notice with a link to its page; it never downloads anything. Turn it off in *File → About* or with `CONSTRUCTCAD_NO_UPDATE_CHECK=1`; see [the interface guide](docs/interface.md#update-notice) for what is contacted. `ccad --version` prints the version.
+At startup (at most once a day) ArchiForm asks the fork's GitHub API for the latest ArchiForm release and, if it is newer, shows a notice with a link to its page; it never downloads anything automatically. Turn it off in *File → About* or with `CONSTRUCTCAD_NO_UPDATE_CHECK=1`; see [the interface guide](docs/interface.md#update-notice) for what is contacted and [the release guide](docs/archiform-updates.md) for publishing updates. `ccad --version` prints the version.
 
 ## Languages
 

@@ -1,6 +1,6 @@
 [package]
 name = "cc_app"
-description = "ConstructCAD desktop application"
+description = "ArchiForm desktop application"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

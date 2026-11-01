@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, sketchdown/workflow-foundation]
   pull_request:
 
 permissions:

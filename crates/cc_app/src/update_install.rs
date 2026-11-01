@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 /// Packages and the checksum list must come from this repository's releases.
-pub const DOWNLOAD_PREFIX: &str = "https://github.com/francisreboucas/constructcad/releases/download/";
+pub const DOWNLOAD_PREFIX: &str = "https://github.com/grafikandesign-ship-it/constructcad/releases/download/";
 /// The checksum list every release carries.
 pub const SUMS: &str = "SHA256SUMS.txt";
 /// No package is bigger than this (they are tens of megabytes).
@@ -189,7 +189,7 @@ fn agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .timeout_connect(Some(Duration::from_secs(15)))
         .timeout_recv_body(Some(READ_TIMEOUT))
-        .user_agent(format!("ConstructCAD/{}", env!("CARGO_PKG_VERSION")))
+        .user_agent(format!("ArchiForm/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .into()
 }
@@ -476,6 +476,7 @@ mod tests {
             {"name": "ok.msi", "browser_download_url": link("ok.msi")},
             {"name": "evil.msi", "browser_download_url": "https://example.com/evil.msi"},
             {"name": "other.msi", "browser_download_url": "https://github.com/someone/constructcad/releases/download/v1/other.msi"},
+            {"name": "upstream.msi", "browser_download_url": "https://github.com/francisreboucas/constructcad/releases/download/v1/upstream.msi"},
             {"name": "mismatch.msi", "browser_download_url": link("different.msi")},
             {"name": "../up.msi", "browser_download_url": link("../up.msi")},
             {"name": "sub/dir.msi", "browser_download_url": link("sub/dir.msi")},

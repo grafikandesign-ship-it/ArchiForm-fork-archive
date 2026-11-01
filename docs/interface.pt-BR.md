@@ -185,12 +185,12 @@ Um tipo de telhado define a **telha** e a **estrutura**, na seção *Cobertura e
 
 ## Aviso de atualização
 
-O ConstructCAD avisa quando uma versão mais nova é publicada; ele nunca baixa nem instala nada por conta própria, só quando você escolhe **Atualizar agora**.
+O ArchiForm avisa quando uma versão mais nova é publicada; ele nunca baixa nem instala nada por conta própria, só quando você escolhe **Atualizar agora**.
 
 - **Quando**: ao iniciar, no máximo uma vez por dia, em segundo plano (a janela nunca espera por isso). *Arquivo → Verificar atualizações* (também no diálogo *Sobre*) verifica na hora e informa "está atualizado", a nova versão ou que não foi possível verificar.
-- **O que é contatado**: uma requisição HTTPS à API do GitHub, `https://api.github.com/repos/francisreboucas/constructcad/releases/latest`, que devolve a última versão publicada. A requisição envia os dados usuais de conexão (seu endereço IP) e o agente `ConstructCAD/<versão>`; nenhum dado de projeto, identificador ou informação de uso. Vale para ela a declaração de privacidade do GitHub.
+- **O que é contatado**: uma requisição HTTPS à API do GitHub, `https://api.github.com/repos/grafikandesign-ship-it/constructcad/releases/latest`, que devolve a última versão publicada do ArchiForm. A requisição envia os dados usuais de conexão (seu endereço IP) e o agente `ArchiForm/<versão>`; nenhum dado de projeto, identificador ou informação de uso. Vale para ela a declaração de privacidade do GitHub.
 - **O que aparece**: quando a versão publicada é mais nova que a em uso (pré-lançamentos são ignorados), um aviso aparece na barra de status e na tela inicial: *Baixar* abre a página da versão no navegador, *Ignorar esta versão* esconde o aviso até sair uma versão posterior, e × o esconde até a próxima verificação. Qualquer falha (sem conexão, tempo esgotado, proxy, limite de requisições) é silenciosa.
-- **Atualizar agora**: onde o ConstructCAD pode se substituir com segurança, o aviso e o diálogo da verificação oferecem *Atualizar agora*. Ele baixa o pacote que corresponde à forma como esta cópia foi instalada e confere o SHA-256 com o `SHA256SUMS.txt` da versão (os dois pelos links de download da própria versão no GitHub) antes de mudar qualquer coisa; um download que não confere é apagado e a cópia instalada fica como estava.
+- **Atualizar agora**: onde o ArchiForm pode se substituir com segurança, o aviso e o diálogo da verificação oferecem *Atualizar agora*. Ele baixa o pacote que corresponde à forma como esta cópia foi instalada e confere o SHA-256 com o `SHA256SUMS.txt` da versão (os dois pelos links de download da própria versão no GitHub) antes de mudar qualquer coisa; um download que não confere é apagado e a cópia instalada fica como estava.
 
   | Instalado como | Atualizar agora faz |
   |---|---|

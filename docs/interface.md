@@ -193,12 +193,12 @@ A roof type sets its **covering** and its **framing**, in the type dialog's *Cov
 
 ## Update notice
 
-ConstructCAD tells you when a newer version is published; it never downloads or installs anything by itself, only when you choose **Update Now**.
+ArchiForm tells you when a newer version is published; it never downloads or installs anything by itself, only when you choose **Update Now**.
 
 - **When**: at startup, at most once a day, in the background (the window never waits for it). *File → Check for Updates* (also in the *About* dialog) checks at once and reports "up to date", the new version, or that it could not check.
-- **What is contacted**: one HTTPS request to the GitHub API, `https://api.github.com/repos/francisreboucas/constructcad/releases/latest`, which returns the latest published release. The request sends the usual connection data (your IP address) and a `ConstructCAD/<version>` user agent; no project data, identifier or usage information. GitHub's privacy statement applies to it.
+- **What is contacted**: one HTTPS request to the GitHub API, `https://api.github.com/repos/grafikandesign-ship-it/constructcad/releases/latest`, which returns the latest published ArchiForm release. The request sends the usual connection data (your IP address) and an `ArchiForm/<version>` user agent; no project data, identifier or usage information. GitHub's privacy statement applies to it.
 - **What you see**: when the release is newer than the running version (pre-releases are ignored), a notice appears in the status bar and on the home screen: *Download* opens the release page in your browser, *Skip This Version* hides the notice until a later version comes out, and × hides it until the next check. Any failure (offline, timeout, proxy, rate limit) is silent.
-- **Update Now**: where ConstructCAD can replace itself safely, the notice and the check's dialog offer *Update Now*. It downloads the package that fits how this copy was installed and checks its SHA-256 against the release's `SHA256SUMS.txt` (both from the release's own download links on GitHub) before anything changes; a download that does not match is deleted and the installed copy is left as it was.
+- **Update Now**: where ArchiForm can replace itself safely, the notice and the check's dialog offer *Update Now*. It downloads the package that fits how this copy was installed and checks its SHA-256 against the release's `SHA256SUMS.txt` (both from the release's own download links on GitHub) before anything changes; a download that does not match is deleted and the installed copy is left as it was.
 
   | Installed as | Update Now does |
   |---|---|
