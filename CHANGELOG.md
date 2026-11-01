@@ -6,12 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [0.8.1] - 2026-11-01
+## [0.8.2] - 2026-11-01
 
 ### Changed
 
 - ArchiForm uses the selected drawing-board icon and application title.
 - Update checks, verified downloads and the About repository link now use the ArchiForm fork's GitHub releases. The Windows installer has its own product identity and install folder, separate from ConstructCAD.
+- The release workflow's tag check works with the Python versions installed on every build runner.
 
 ## [0.8.0] - 2026-10-30
 

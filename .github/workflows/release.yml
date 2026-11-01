@@ -59,7 +59,12 @@ jobs:
       - name: Verify version tag
         shell: bash
         run: |
-          version=$(python -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+          version=$(awk -F '"' '
+            /^\[workspace.package\]$/ { in_package=1; next }
+            /^\[/ { in_package=0 }
+            in_package && /^version = "/ { print $2; exit }
+          ' Cargo.toml)
+          test -n "$version"
           test "$GITHUB_REF_NAME" = "v$version"
       - run: cargo build --release --locked -p cc_app -p cc_cli --target ${{ matrix.target }}
       - name: Package

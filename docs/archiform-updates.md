@@ -13,11 +13,11 @@ The development executable in `target/debug` is not a release installation and c
 3. Commit and push the branch. Wait for the fork's CI workflow to pass. Then create a tag on that exact commit and push it:
 
    ```sh
-   git tag v0.8.2
-   git push origin v0.8.2
+   git tag v0.8.3
+   git push origin v0.8.3
    ```
 
-   Replace `0.8.2` with the version you set in both files. The release workflow refuses a tag that differs from the Cargo version.
+   Replace `0.8.3` with the version you set in both files. The release workflow refuses a tag that differs from the Cargo version.
 4. GitHub Actions builds the packages, writes `SHA256SUMS.txt`, and publishes a release when all builds succeed. Check the release page before installing it.
 5. ArchiForm checks once a day when the preference is enabled, or immediately through **File → Check for Updates**. Choose **Update Now** to download and install. Windows MSI and portable ZIP installations support this path.
 
