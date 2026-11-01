@@ -6,6 +6,8 @@ ArchiForm checks only the releases of `grafikandesign-ship-it/constructcad`. It 
 
 The development executable in `target/debug` is not a release installation and cannot update itself. Install the first ArchiForm release from the fork's [Releases page](https://github.com/grafikandesign-ship-it/constructcad/releases), using either the Windows MSI or the portable ZIP. The MSI installs under `Program Files/ArchiForm` with its own Windows product identity. Keep project `.ccad` files outside the program folder.
 
+From v0.8.3, new Windows ZIP installations start `ArchiForm.exe`. The v0.8.3 ZIP also carries a temporary `constructcad.exe` copy for the v0.8.2 portable updater, which looks for that filename. Existing v0.8.2 portable folders can be migrated by copying `ArchiForm.exe` from the verified ZIP into the same folder as `ccad.exe` and then removing the old executable after closing it. Project `.ccad` files require no conversion.
+
 ## Publish the next version
 
 1. Work on the `sketchdown/workflow-foundation` branch, merge any desired upstream changes there, and run the relevant checks.

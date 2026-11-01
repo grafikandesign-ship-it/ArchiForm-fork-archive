@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-11-01
+
+### Changed
+
+- Renamed the desktop executable and Windows, Linux and macOS release files to ArchiForm. The Windows portable ZIP temporarily includes a `constructcad.exe` alias so copies of v0.8.2 can update. The `.ccad` project format and `ccad` CLI remain compatible.
+
 ## [0.8.2] - 2026-11-01
 
 ### Changed

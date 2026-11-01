@@ -237,7 +237,7 @@ fn download(agent: &ureq::Agent, url: &str, path: &Path, progress: &Progress) ->
 
 /// A folder for downloads that are not written next to their target.
 fn staging() -> Result<PathBuf, String> {
-    let dir = std::env::temp_dir().join(format!("constructcad-update-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("archiform-update-{}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     Ok(dir)
 }
@@ -283,7 +283,12 @@ fn put_in_place(kind: &InstallKind, package: &Path) -> Result<Next, String> {
         InstallKind::Portable(exe) => {
             let dir = package.with_extension("unpacked");
             unzip(package, &dir)?;
-            let new = find_file(&dir, "constructcad.exe", 3).ok_or("the package has no constructcad.exe")?;
+            // Old portable releases run as constructcad.exe; the first renamed
+            // archive includes that alias so their updater can still install it.
+            let name = exe.file_name().and_then(|n| n.to_str()).unwrap_or("ArchiForm.exe");
+            let new = find_file(&dir, name, 3)
+                .or_else(|| find_file(&dir, "ArchiForm.exe", 3))
+                .ok_or("the package has no ArchiForm executable")?;
             swap_executable(exe, &new)?;
             if let (Some(cli), Some(new_cli)) = (exe.parent().map(|d| d.join("ccad.exe")), new.parent()) {
                 let new_cli = new_cli.join("ccad.exe");
@@ -364,7 +369,7 @@ pub fn swap_executable(current: &Path, new: &Path) -> Result<(), String> {
 /// Remove the `.old` executables a previous update left beside `exe`.
 pub fn remove_old_executables(exe: &Path) {
     let Some(dir) = exe.parent() else { return };
-    for name in ["constructcad.exe.old", "ccad.exe.old"] {
+    for name in ["ArchiForm.exe.old", "constructcad.exe.old", "ccad.exe.old"] {
         let _ = std::fs::remove_file(dir.join(name));
     }
 }
@@ -457,14 +462,14 @@ mod tests {
     }
 
     const RELEASE: [&str; 9] = [
-        "constructcad-v0.8.0-x86_64-pc-windows-msvc.zip",
-        "constructcad-v0.8.0-x86_64.msi",
-        "constructcad-v0.8.0-x86_64.AppImage",
-        "constructcad-v0.8.0-aarch64.AppImage",
-        "constructcad_0.8.0_amd64.deb",
-        "constructcad_0.8.0_arm64.deb",
-        "constructcad-v0.8.0-aarch64-apple-darwin.dmg",
-        "constructcad-v0.8.0-x86_64-unknown-linux-gnu.tar.gz",
+        "ArchiForm-v0.8.0-x86_64-pc-windows-msvc.zip",
+        "ArchiForm-v0.8.0-x86_64.msi",
+        "ArchiForm-v0.8.0-x86_64.AppImage",
+        "ArchiForm-v0.8.0-aarch64.AppImage",
+        "archiform_0.8.0_amd64.deb",
+        "archiform_0.8.0_arm64.deb",
+        "ArchiForm-v0.8.0-aarch64-apple-darwin.dmg",
+        "ArchiForm-v0.8.0-x86_64-unknown-linux-gnu.tar.gz",
         "SHA256SUMS.txt",
     ];
 
@@ -491,27 +496,27 @@ mod tests {
     #[test]
     fn installations_are_told_apart() {
         let none = |_: &str| None;
-        let appimage = |n: &str| (n == "APPIMAGE").then(|| "/home/a/ConstructCAD.AppImage".to_string());
+        let appimage = |n: &str| (n == "APPIMAGE").then(|| "/home/a/ArchiForm.AppImage".to_string());
         assert_eq!(
-            detect("linux", Some(Path::new("/tmp/.mount_x/usr/bin/constructcad")), appimage),
-            InstallKind::AppImage(PathBuf::from("/home/a/ConstructCAD.AppImage"))
+            detect("linux", Some(Path::new("/tmp/.mount_x/usr/bin/archiform")), appimage),
+            InstallKind::AppImage(PathBuf::from("/home/a/ArchiForm.AppImage"))
         );
-        assert_eq!(detect("linux", Some(Path::new("/usr/bin/constructcad")), none), InstallKind::Deb);
-        assert_eq!(detect("linux", Some(Path::new("/home/a/cc/constructcad")), none), InstallKind::Other);
+        assert_eq!(detect("linux", Some(Path::new("/usr/bin/archiform")), none), InstallKind::Deb);
+        assert_eq!(detect("linux", Some(Path::new("/home/a/cc/archiform")), none), InstallKind::Other);
         let program_files = |n: &str| (n == "ProgramFiles").then(|| "C:\\Program Files".to_string());
-        let msi = Path::new("C:\\Program Files\\ConstructCAD\\constructcad.exe");
+        let msi = Path::new("C:\\Program Files\\ArchiForm\\ArchiForm.exe");
         assert_eq!(detect("windows", Some(msi), program_files), InstallKind::Msi);
         assert_eq!(
-            detect("macos", Some(Path::new("/Applications/ConstructCAD.app/Contents/MacOS/constructcad")), none),
+            detect("macos", Some(Path::new("/Applications/ArchiForm.app/Contents/MacOS/archiform")), none),
             InstallKind::MacApp
         );
-        assert_eq!(detect("macos", Some(Path::new("/Users/a/bin/constructcad")), none), InstallKind::Other);
+        assert_eq!(detect("macos", Some(Path::new("/Users/a/bin/archiform")), none), InstallKind::Other);
         assert_eq!(detect("freebsd", None, none), InstallKind::Other);
 
         // The Windows .zip: ccad.exe beside the app, outside Program Files.
         let dir = std::env::temp_dir().join(format!("ccad-detect-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let exe = dir.join("constructcad.exe");
+        let exe = dir.join("ArchiForm.exe");
         assert_eq!(detect("windows", Some(&exe), program_files), InstallKind::Other, "no ccad.exe");
         std::fs::write(dir.join("ccad.exe"), b"").unwrap();
         assert_eq!(detect("windows", Some(&exe), program_files), InstallKind::Portable(exe.clone()));
@@ -532,7 +537,7 @@ mod tests {
         assert_eq!(pick(InstallKind::MacApp, "x86_64"), None, "no Intel disk image in this release");
         assert_eq!(pick(InstallKind::Msi, "aarch64"), None);
         assert_eq!(pick(InstallKind::Other, "x86_64"), None);
-        assert_eq!(deb_command(&list[4]), "sudo apt install ./constructcad_0.8.0_amd64.deb");
+        assert_eq!(deb_command(&list[4]), "sudo apt install ./archiform_0.8.0_amd64.deb");
     }
 
     #[test]
@@ -555,15 +560,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ccad-swap-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let exe = dir.join("constructcad.exe");
+        let exe = dir.join("ArchiForm.exe");
         let new = dir.join("new.exe");
         std::fs::write(&exe, b"old").unwrap();
         std::fs::write(&new, b"new").unwrap();
         swap_executable(&exe, &new).unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), b"new");
-        assert_eq!(std::fs::read(dir.join("constructcad.exe.old")).unwrap(), b"old");
+        assert_eq!(std::fs::read(dir.join("ArchiForm.exe.old")).unwrap(), b"old");
         remove_old_executables(&exe);
-        assert!(!dir.join("constructcad.exe.old").exists());
+        assert!(!dir.join("ArchiForm.exe.old").exists());
         // The new file is missing: the old executable comes back.
         assert!(swap_executable(&exe, &dir.join("missing.exe")).is_err());
         assert_eq!(std::fs::read(&exe).unwrap(), b"new");
@@ -574,27 +579,24 @@ mod tests {
     fn the_installer_command_quotes_paths() {
         let (program, args) = installer_command(
             Path::new("C:\\Temp\\it's here\\a.msi"),
-            Path::new("C:\\Program Files\\ConstructCAD\\constructcad.exe"),
+            Path::new("C:\\Program Files\\ArchiForm\\ArchiForm.exe"),
         );
         assert_eq!(program, "powershell");
         let script = args.last().unwrap();
         assert!(script.contains("'\"C:\\Temp\\it''s here\\a.msi\"'"), "{script}");
         assert!(script.contains("'/passive' -Wait"), "{script}");
-        assert!(
-            script.ends_with("Start-Process -FilePath 'C:\\Program Files\\ConstructCAD\\constructcad.exe'"),
-            "{script}"
-        );
+        assert!(script.ends_with("Start-Process -FilePath 'C:\\Program Files\\ArchiForm\\ArchiForm.exe'"), "{script}");
     }
 
     #[test]
     fn files_are_found_in_unpacked_folders() {
         let dir = std::env::temp_dir().join(format!("ccad-find-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let inner = dir.join("constructcad-v0.8.0-x86_64-pc-windows-msvc");
+        let inner = dir.join("ArchiForm-v0.8.0-x86_64-pc-windows-msvc");
         std::fs::create_dir_all(&inner).unwrap();
-        std::fs::write(inner.join("ConstructCAD.exe"), b"").unwrap();
-        assert_eq!(find_file(&dir, "constructcad.exe", 3), Some(inner.join("ConstructCAD.exe")));
-        assert_eq!(find_file(&dir, "constructcad.exe", 0), None, "only one level is searched");
+        std::fs::write(inner.join("ArchiForm.exe"), b"").unwrap();
+        assert_eq!(find_file(&dir, "ArchiForm.exe", 3), Some(inner.join("ArchiForm.exe")));
+        assert_eq!(find_file(&dir, "ArchiForm.exe", 0), None, "only one level is searched");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -608,12 +610,12 @@ mod tests {
         if std::env::consts::OS != "windows" {
             return;
         }
-        let tag = "v0.7.0";
-        let name = format!("constructcad-{tag}-x86_64-pc-windows-msvc.zip");
+        let tag = "v0.8.3";
+        let name = format!("ArchiForm-{tag}-x86_64-pc-windows-msvc.zip");
         let dir = std::env::temp_dir().join(format!("ccad-live-update-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let exe = dir.join("constructcad.exe");
+        let exe = dir.join("ArchiForm.exe");
         std::fs::write(&exe, b"stand-in").unwrap();
         std::fs::write(dir.join("ccad.exe"), b"stand-in").unwrap();
         let package = Asset { url: format!("{DOWNLOAD_PREFIX}{tag}/{name}"), name };
@@ -623,7 +625,7 @@ mod tests {
         assert_eq!(next, Next::Restart(exe.clone()));
         assert!(std::fs::metadata(&exe).unwrap().len() > 1_000_000, "the real executable is in place");
         assert!(std::fs::metadata(dir.join("ccad.exe")).unwrap().len() > 1_000_000);
-        assert_eq!(std::fs::read(dir.join("constructcad.exe.old")).unwrap(), b"stand-in");
+        assert_eq!(std::fs::read(dir.join("ArchiForm.exe.old")).unwrap(), b"stand-in");
         assert!(progress.done.load(Ordering::Relaxed) > 1_000_000);
         // A wrong checksum list: nothing is installed and the download is removed.
         let bad = Asset { name: "SHA256SUMS.txt".into(), url: package.url.clone() };

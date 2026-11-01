@@ -510,13 +510,13 @@ mod tests {
         let body = serde_json::json!({
             "tag_name": "v9.0.0", "draft": false, "prerelease": false,
             "assets": [
-                {"name": "constructcad-v9.0.0-x86_64.msi", "browser_download_url": format!("{prefix}v9.0.0/constructcad-v9.0.0-x86_64.msi")},
+                {"name": "ArchiForm-v9.0.0-x86_64.msi", "browser_download_url": format!("{prefix}v9.0.0/ArchiForm-v9.0.0-x86_64.msi")},
                 {"name": "SHA256SUMS.txt", "browser_download_url": format!("{prefix}v9.0.0/SHA256SUMS.txt")},
                 {"name": "elsewhere.msi", "browser_download_url": "https://example.com/elsewhere.msi"},
             ]
         });
         let Outcome::Available(release) = evaluate(v(0, 1, 0), &body.to_string()) else { panic!("newer") };
         let names: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
-        assert_eq!(names, ["constructcad-v9.0.0-x86_64.msi", "SHA256SUMS.txt"]);
+        assert_eq!(names, ["ArchiForm-v9.0.0-x86_64.msi", "SHA256SUMS.txt"]);
     }
 }

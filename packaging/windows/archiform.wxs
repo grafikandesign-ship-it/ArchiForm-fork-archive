@@ -2,16 +2,16 @@
 <!--
   ArchiForm installer (WiX Toolset v5).
 
-  Per-machine install under Program Files\ArchiForm with constructcad.exe,
+  Per-machine install under Program Files\ArchiForm with ArchiForm.exe,
   ccad.exe, the documents and the sample project; a Start menu shortcut; the
   .ccad extension opens with ArchiForm; an optional feature adds the folder
   to the system PATH so `ccad` runs from any terminal. Newer versions replace
   older ArchiForm releases (the UpgradeCode below must never change).
 
   Build (see .github/workflows/release.yml):
-    wix build packaging/windows/constructcad.wxs -arch x64 -ext WixToolset.UI.wixext
+    wix build packaging/windows/archiform.wxs -arch x64 -ext WixToolset.UI.wixext
       -d Version=1.2.3 -d BinDir=<dir with the .exe files> -d LicenseRtf=<License.rtf>
-      -o constructcad.msi
+      -o ArchiForm.msi
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
@@ -40,7 +40,7 @@
 
     <ComponentGroup Id="ProgramFiles" Directory="INSTALLFOLDER">
       <Component Id="App">
-        <File Id="constructcad.exe" Source="$(var.BinDir)\constructcad.exe" KeyPath="yes">
+        <File Id="ArchiForm.exe" Source="$(var.BinDir)\archiform.exe" Name="ArchiForm.exe" KeyPath="yes">
           <Shortcut
             Id="StartMenuShortcut"
             Directory="ProgramMenuFolder"
@@ -51,9 +51,9 @@
             Advertise="yes" />
         </File>
         <!-- .ccad projects open with ArchiForm. -->
-        <ProgId Id="ArchiForm.Project" Description="ArchiForm project" Icon="constructcad.exe" IconIndex="0">
-          <Extension Id="ccad" ContentType="application/x-constructcad">
-            <Verb Id="open" Command="Open" TargetFile="constructcad.exe" Argument="&quot;%1&quot;" />
+        <ProgId Id="ArchiForm.Project" Description="ArchiForm project" Icon="ArchiForm.exe" IconIndex="0">
+          <Extension Id="ccad" ContentType="application/x-archiform">
+            <Verb Id="open" Command="Open" TargetFile="ArchiForm.exe" Argument="&quot;%1&quot;" />
           </Extension>
         </ProgId>
       </Component>

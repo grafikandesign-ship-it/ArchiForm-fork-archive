@@ -1213,7 +1213,7 @@ fn update_install_dialog_offers_what_is_left_to_do() {
     harness.run();
     assert!(harness.state().updates.install.is_none());
 
-    let msi = std::path::PathBuf::from("C:/Temp/constructcad-v9.0.0-x86_64.msi");
+    let msi = std::path::PathBuf::from("C:/Temp/ArchiForm-v9.0.0-x86_64.msi");
     let next = crate::update_install::Next::Installer(msi);
     harness.state_mut().updates.install = Some(Install::Ready(version, next.clone()));
     harness.run();

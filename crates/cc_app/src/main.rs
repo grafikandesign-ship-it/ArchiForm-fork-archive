@@ -68,7 +68,7 @@ fn main() -> eframe::Result<()> {
     // so desktops show its icon. eframe keeps its settings under the same
     // (lowercased) folder name on Linux, so nothing moves.
     #[cfg(target_os = "linux")]
-    let viewport = viewport.with_app_id("constructcad");
+    let viewport = viewport.with_app_id("archiform");
     // The language of a start-up error message (the app then applies the saved preference).
     i18n::set_language(args.language.unwrap_or_else(i18n::Language::from_system));
     // Try the graphics APIs in turn until one shows the window (issue #74).
@@ -112,7 +112,7 @@ fn app_icon() -> egui::IconData {
     eframe::icon_data::from_png_bytes(theme::APP_ICON_PNG).unwrap_or_default()
 }
 
-/// `constructcad [project.ccad] [--view NAME]... [--lang en|pt-BR|es|fr|de|it|lo|pl|uk-UA|zh-TW|zh-CN]`
+/// `archiform [project.ccad] [--view NAME]... [--lang en|pt-BR|es|fr|de|it|lo|pl|uk-UA|zh-TW|zh-CN]`
 ///
 /// Named views replace the default layout (the first floor plan beside the
 /// 3D view): the first on the left, the second on the right, others as tabs.

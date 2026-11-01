@@ -196,8 +196,8 @@ O ArchiForm avisa quando uma versão mais nova é publicada; ele nunca baixa nem
   |---|---|
   | AppImage | Baixa o novo AppImage ao lado do antigo, confere, renomeia por cima do arquivo antigo e oferece *Reiniciar agora* |
   | Instalador do Windows (`.msi`, em Arquivos de Programas) | Baixa e confere o instalador; ele roda quando o ConstructCAD fecha (*Instalar agora* fecha, perguntando antes sobre alterações não salvas; *Ao sair* espera), e o ConstructCAD abre de novo ao terminar |
-  | `.zip` do Windows | Baixa e confere o arquivo, coloca o novo `constructcad.exe` e o `ccad.exe` no lugar (os antigos ficam como `.old` e são apagados na próxima abertura) e oferece *Reiniciar agora* |
-  | App do macOS | Baixa e confere a imagem de disco e a abre: arraste o ConstructCAD para Aplicativos |
+  | `.zip` do Windows | Baixa e confere o arquivo, coloca o novo `ArchiForm.exe` e o `ccad.exe` no lugar (os antigos ficam como `.old` e são apagados na próxima abertura) e oferece *Reiniciar agora* |
+  | App do macOS | Baixa e confere a imagem de disco e a abre: arraste o ArchiForm para Aplicativos |
   | `.deb` | Nada: o diálogo mostra o comando do `apt`, com Copiar, e *Baixar* pega o pacote |
   | `.tar.gz`, compilação própria | Nada: *Baixar* abre a página da versão |
 
@@ -217,7 +217,7 @@ O ConstructCAD desenha com a API gráfica nativa do sistema (DirectX 12 ou Vulka
 - Se a API nativa informar um erro, a mesma abertura tenta o OpenGL. Se ela travar antes de a janela aparecer, o ConstructCAD abre de novo uma vez com o OpenGL; se o processo inteiro morrer (uma falha do driver), a próxima abertura tenta o OpenGL primeiro.
 - Depois que o OpenGL foi necessário, ele continua em primeiro: a escolha fica no arquivo `gpu-backend` da pasta de dados. Apague esse arquivo (depois de atualizar o driver de vídeo, por exemplo) para tentar a API nativa de novo.
 - Toda abertura que falha é registrada em `crash.log` na pasta de dados. Quando nenhuma API funciona, uma mensagem avisa e indica esse arquivo.
-- A variável de ambiente `WGPU_BACKEND` escolhe a API e desliga a troca automática: `gl` para OpenGL, `dx12`, `vulkan` ou `metal`, ou várias separadas por vírgulas (no Windows, por exemplo, `set WGPU_BACKEND=gl` num prompt de comando antes de abrir `constructcad.exe`, ou como variável de ambiente do usuário). `WGPU_POWER_PREF=low` prefere a GPU integrada em computadores com duas.
+- A variável de ambiente `WGPU_BACKEND` escolhe a API e desliga a troca automática: `gl` para OpenGL, `dx12`, `vulkan` ou `metal`, ou várias separadas por vírgulas (no Windows, por exemplo, `set WGPU_BACKEND=gl` num prompt de comando antes de abrir `ArchiForm.exe`, ou como variável de ambiente do usuário). `WGPU_POWER_PREF=low` prefere a GPU integrada em computadores com duas.
 
 ## Acessibilidade
 

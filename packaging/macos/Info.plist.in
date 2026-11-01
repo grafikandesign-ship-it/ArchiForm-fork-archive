@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- ConstructCAD.app; build-app.sh replaces @VERSION@. -->
+<!-- ArchiForm.app; build-app.sh replaces @VERSION@. -->
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleName</key>
-  <string>ConstructCAD</string>
+  <string>ArchiForm</string>
   <key>CFBundleDisplayName</key>
-  <string>ConstructCAD</string>
+  <string>ArchiForm</string>
   <key>CFBundleIdentifier</key>
-  <string>io.github.francisreboucas.constructcad</string>
+  <string>io.github.grafikandesign.archiform</string>
   <key>CFBundleExecutable</key>
-  <string>constructcad</string>
+  <string>archiform</string>
   <key>CFBundleIconFile</key>
-  <string>ConstructCAD</string>
+  <string>ArchiForm</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleInfoDictionaryVersion</key>
@@ -35,16 +35,16 @@
   <array>
     <dict>
       <key>CFBundleTypeName</key>
-      <string>ConstructCAD Project</string>
+      <string>ArchiForm Project</string>
       <key>CFBundleTypeRole</key>
       <string>Editor</string>
       <key>LSHandlerRank</key>
       <string>Owner</string>
       <key>CFBundleTypeIconFile</key>
-      <string>ConstructCAD</string>
+      <string>ArchiForm</string>
       <key>LSItemContentTypes</key>
       <array>
-        <string>io.github.francisreboucas.constructcad.project</string>
+        <string>io.github.grafikandesign.archiform.project</string>
       </array>
     </dict>
   </array>
@@ -52,11 +52,11 @@
   <array>
     <dict>
       <key>UTTypeIdentifier</key>
-      <string>io.github.francisreboucas.constructcad.project</string>
+      <string>io.github.grafikandesign.archiform.project</string>
       <key>UTTypeDescription</key>
-      <string>ConstructCAD Project</string>
+      <string>ArchiForm Project</string>
       <key>UTTypeIconFile</key>
-      <string>ConstructCAD</string>
+      <string>ArchiForm</string>
       <key>UTTypeConformsTo</key>
       <array>
         <string>public.data</string>
@@ -69,7 +69,7 @@
           <string>ccad</string>
         </array>
         <key>public.mime-type</key>
-        <string>application/x-constructcad</string>
+        <string>application/x-archiform</string>
       </dict>
     </dict>
   </array>

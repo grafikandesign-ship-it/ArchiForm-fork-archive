@@ -70,15 +70,18 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          name="constructcad-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          name="ArchiForm-${GITHUB_REF_NAME}-${{ matrix.target }}"
           mkdir -p "dist/$name"
           cp README.md README.pt-BR.md LICENSE CHANGELOG.md "dist/$name/"
           cp examples/casa_simples.ccad "dist/$name/"
           if [ "${{ matrix.archive }}" = zip ]; then
-            cp "target/${{ matrix.target }}/release/constructcad.exe" "target/${{ matrix.target }}/release/ccad.exe" "dist/$name/"
+            cp "target/${{ matrix.target }}/release/archiform.exe" "dist/$name/ArchiForm.exe"
+            # One-release compatibility alias for the v0.8.2 portable updater.
+            cp "target/${{ matrix.target }}/release/archiform.exe" "dist/$name/constructcad.exe"
+            cp "target/${{ matrix.target }}/release/ccad.exe" "dist/$name/"
             (cd dist && 7z a "$name.zip" "$name" > /dev/null)
           else
-            cp "target/${{ matrix.target }}/release/constructcad" "target/${{ matrix.target }}/release/ccad" "dist/$name/"
+            cp "target/${{ matrix.target }}/release/archiform" "target/${{ matrix.target }}/release/ccad" "dist/$name/"
             tar -C dist -czf "dist/$name.tar.gz" "$name"
           fi
           rm -rf "dist/$name"
@@ -98,11 +101,11 @@ jobs:
           wix --version
           version="${GITHUB_REF_NAME#v}"
           python packaging/windows/license_rtf.py LICENSE "$RUNNER_TEMP/License.rtf"
-          wix build packaging/windows/constructcad.wxs -arch x64 -ext WixToolset.UI.wixext \
+          wix build packaging/windows/archiform.wxs -arch x64 -ext WixToolset.UI.wixext \
             -d "Version=${version%%[-+]*}" \
             -d "BinDir=target/${{ matrix.target }}/release" \
             -d "LicenseRtf=$RUNNER_TEMP/License.rtf" \
-            -o "dist/constructcad-${GITHUB_REF_NAME}-x86_64.msi"
+            -o "dist/ArchiForm-${GITHUB_REF_NAME}-x86_64.msi"
 
       # Linux: .deb (dpkg-deb) and AppImage (appimagetool), built natively on each architecture.
       - name: Linux packaging tools
@@ -112,7 +115,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends dpkg-dev desktop-file-utils \
             patchelf libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1 libxcursor1 libxi6
-          desktop-file-validate packaging/linux/constructcad.desktop
+          desktop-file-validate packaging/linux/archiform.desktop
           arch=${{ matrix.arch }}
           tool_sha="APPIMAGETOOL_SHA256_$arch"
           runtime_sha="APPIMAGE_RUNTIME_SHA256_$arch"
@@ -127,7 +130,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           packaging/linux/build-deb.sh "$version" "target/${{ matrix.target }}/release" ${{ matrix.deb_arch }} \
-            "dist/constructcad_${version//-/\~}_${{ matrix.deb_arch }}.deb"
+            "dist/archiform_${version//-/\~}_${{ matrix.deb_arch }}.deb"
           dpkg-deb --info dist/*.deb
           dpkg-deb --contents dist/*.deb
       - name: AppImage
@@ -135,16 +138,16 @@ jobs:
         shell: bash
         run: |
           packaging/linux/build-appimage.sh "target/${{ matrix.target }}/release" ${{ matrix.arch }} \
-            "dist/constructcad-${GITHUB_REF_NAME}-${{ matrix.arch }}.AppImage" \
+            "dist/ArchiForm-${GITHUB_REF_NAME}-${{ matrix.arch }}.AppImage" \
             "$RUNNER_TEMP/appimagetool" "$RUNNER_TEMP/runtime-${{ matrix.arch }}"
 
-      # macOS: ConstructCAD.app in a .dmg, one per architecture (ccad stays in the archive).
+      # macOS: ArchiForm.app in a .dmg, one per architecture (ccad stays in the archive).
       - name: DMG
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          packaging/macos/build-dmg.sh "${GITHUB_REF_NAME#v}" "target/${{ matrix.target }}/release/constructcad" \
-            "dist/constructcad-${GITHUB_REF_NAME}-${{ matrix.target }}.dmg"
+          packaging/macos/build-dmg.sh "${GITHUB_REF_NAME#v}" "target/${{ matrix.target }}/release/archiform" \
+            "dist/ArchiForm-${GITHUB_REF_NAME}-${{ matrix.target }}.dmg"
 
       - uses: actions/upload-artifact@v7
         with:

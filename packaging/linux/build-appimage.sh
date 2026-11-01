@@ -27,7 +27,7 @@ esac
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-appdir="$work/ConstructCAD.AppDir"
+appdir="$work/ArchiForm.AppDir"
 packaging/linux/install-tree.sh "$bin_dir" "$appdir"
 
 # winit loads the keyboard and X11 libraries with dlopen and fails without them;
@@ -49,19 +49,19 @@ for lib in $bundled_libs; do
     pkg=$(dpkg -S "$(readlink -f "$path")" | head -n1 | cut -d: -f1)
     install -Dm644 "/usr/share/doc/$pkg/copyright" "$appdir/usr/share/doc/$pkg/copyright"
 done
-for exe in constructcad ccad; do
+for exe in archiform ccad; do
     patchelf --set-rpath '$ORIGIN/../lib' "$appdir/usr/bin/$exe"
 done
 
 # The AppDir root holds the desktop file, the icon and the entry point.
-cp packaging/linux/constructcad.desktop "$appdir/constructcad.desktop"
-cp assets/icons/app-icon-256.png "$appdir/constructcad.png"
-ln -s constructcad.png "$appdir/.DirIcon"
+cp packaging/linux/archiform.desktop "$appdir/archiform.desktop"
+cp assets/icons/app-icon-256.png "$appdir/archiform.png"
+ln -s archiform.png "$appdir/.DirIcon"
 cat > "$appdir/AppRun" <<'EOF'
 #!/bin/sh
-# Start ConstructCAD from wherever the AppImage is mounted.
+# Start ArchiForm from wherever the AppImage is mounted.
 here="$(dirname "$(readlink -f "$0")")"
-exec "$here/usr/bin/constructcad" "$@"
+exec "$here/usr/bin/archiform" "$@"
 EOF
 chmod 755 "$appdir/AppRun"
 

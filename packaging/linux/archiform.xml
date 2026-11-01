@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Shared MIME info: .ccad files are ArchiForm projects (RON text). -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-archiform">
+    <comment>ArchiForm project</comment>
+    <comment xml:lang="pt_BR">Projeto do ArchiForm</comment>
+    <sub-class-of type="text/plain"/>
+    <icon name="archiform"/>
+    <glob pattern="*.ccad"/>
+  </mime-type>
+</mime-info>
