@@ -1,6 +1,6 @@
 # ArchiForm updates
 
-ArchiForm checks only the releases of `grafikandesign-ship-it/constructcad`. It never downloads an update until the user selects **Update Now**. The download and `SHA256SUMS.txt` must both come from that fork; the package is checked before installation.
+ArchiForm checks only the releases of `grafikandesign-ship-it/constructcad`. It never downloads an update until the user selects **Update Now**. The download and `SHA256SUMS.txt` must both come from that fork; the package is checked before installation. GitHub Actions must be enabled on the fork for the release workflow to run.
 
 ## First installation on Windows
 
@@ -10,7 +10,7 @@ The development executable in `target/debug` is not a release installation and c
 
 1. Work on the `sketchdown/workflow-foundation` branch, merge any desired upstream changes there, and run the relevant checks.
 2. Update `[workspace.package] version` in `Cargo.toml`; refresh `Cargo.lock` with Cargo; add a matching `## [x.y.z]` entry to `CHANGELOG.md`.
-3. Commit and push the branch. Then create a tag on that exact commit and push it:
+3. Commit and push the branch. Wait for the fork's CI workflow to pass. Then create a tag on that exact commit and push it:
 
    ```sh
    git tag v0.8.2
