@@ -12,7 +12,7 @@ The source contains one icon for several related commands (for example, both mir
 
 ## Application icon
 
-`assets/icons/app-icon.svg` is the source for the ConstructCAD application icon: a cobalt architectural-plan C with an amber door swing on a dark slate tile. Regenerate the PNGs and multi-resolution Windows ICO with:
+`assets/icons/app-icon.svg` is the source for the ArchiForm application icon: a cobalt architectural A with an amber door swing on a dark slate tile. Regenerate the PNGs and multi-resolution Windows ICO with:
 
 ```sh
 cargo run -p cc_app --example render_app_icon
