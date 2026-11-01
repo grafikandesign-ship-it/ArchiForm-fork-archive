@@ -12,7 +12,7 @@ The source contains one icon for several related commands (for example, both mir
 
 ## Application icon
 
-`assets/icons/app-icon.svg` is the source for the ArchiForm application icon: a cobalt architectural A with an amber door swing on a dark slate tile. Regenerate the PNGs and multi-resolution Windows ICO with:
+`assets/icons/app-icon.svg` is the source for the ArchiForm application icon: a simplified 3D drawing board with an architectural plan and amber door swing on a cyan tile. It is based on the drawing-board concept selected from the user's `49749.eps` reference. Regenerate the PNGs and multi-resolution Windows ICO with:
 
 ```sh
 cargo run -p cc_app --example render_app_icon

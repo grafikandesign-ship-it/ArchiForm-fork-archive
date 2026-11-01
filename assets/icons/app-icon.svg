@@ -1,5 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <rect x="1" y="1" width="62" height="62" rx="4" fill="#0f172a" stroke="#334155" stroke-width="2"/>
-  <path d="M10 52 26 12H38L54 52H45L39.8 39H24.2L19 52ZM27.4 31H36.6L32 19.5Z" fill="#60a5fa" fill-rule="evenodd"/>
-  <path d="M28 52V42M28 42A10 10 0 0 1 38 52" fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="miter"/>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#c8f4fb"/>
+      <stop offset="1" stop-color="#75cddd"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e9eef0"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="62" height="62" rx="10" fill="url(#tile)" stroke="#8bd8e7" stroke-width="2"/>
+  <ellipse cx="32" cy="58" rx="23" ry="3" fill="#3c9bab" opacity=".25"/>
+  <path d="M17 56 23 43H29L22 57ZM47 56 41 43H35L42 57Z" fill="#263b50"/>
+  <path d="M22 57 29 43H26L19 57ZM42 57 35 43H38L45 57Z" fill="#455b70"/>
+  <path d="M22 51H42V54H22Z" fill="#263b50"/>
+  <path d="M9 13 12 10H55L52 13Z" fill="#52677c"/>
+  <path d="M52 13 55 10V46L52 49Z" fill="#233448"/>
+  <rect x="9" y="13" width="43" height="36" rx="1.5" fill="#34485d"/>
+  <rect x="11.5" y="16" width="38" height="29" fill="url(#paper)"/>
+  <path d="M15 20H46V41H15ZM15 29H28V20M28 29H46M35 29V41M15 35H28M28 35V41" fill="none" stroke="#34485d" stroke-width="2.5" stroke-linejoin="miter"/>
+  <path d="M16 41V36M16 36A5 5 0 0 1 21 41" fill="none" stroke="#e5a83c" stroke-width="1.8"/>
+  <path d="M8 11H53V15H8ZM8 46H53V50H8Z" fill="#34485d"/>
+  <path d="M8 11H53V12H8ZM8 46H53V47H8Z" fill="#61758a" opacity=".8"/>
 </svg>
