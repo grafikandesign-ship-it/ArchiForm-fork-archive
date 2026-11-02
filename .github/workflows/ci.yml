@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, sketchdown/workflow-foundation]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,6 +25,7 @@ jobs:
 
   check:
     name: Clippy and tests (${{ matrix.os }})
+    if: github.event_name != 'push' || github.ref != 'refs/heads/sketchdown/workflow-foundation'
     strategy:
       fail-fast: false
       matrix:
@@ -40,6 +42,7 @@ jobs:
 
   ifc:
     name: IFC validation (IfcOpenShell)
+    if: github.event_name != 'push' || github.ref != 'refs/heads/sketchdown/workflow-foundation'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5

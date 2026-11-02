@@ -72,5 +72,6 @@ Rust workspace (edition 2024). Dependency direction: `cc_core` ← `cc_geom` ←
 
 ## Project policies
 
+- **Development cadence:** the current feature group is Architecture. During its development, keep the workspace version fixed, do not tag or publish a release, and test the Windows portable executable only. Pushing `sketchdown/workflow-foundation` runs formatting but skips the multi-platform CI matrix and IFC validation. Build the portable Windows app locally when a testable change is ready; do not build MSI or other operating-system packages. When the user accepts the completed feature group, run the full CI through `workflow_dispatch`, bump the version once, and publish a tag to build all release packages. See `docs/development-workflow.md`.
 - Clean-room: behaviour comes from public documentation, general CAD conventions, open standards and user feedback; reference tests use analytic values or open-source tools (see CONTRIBUTING.md and the README "Independence" section).
 - Code, comments, identifiers and commit messages are in English; the user communicates in Portuguese.
