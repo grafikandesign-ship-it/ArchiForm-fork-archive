@@ -802,6 +802,21 @@ fn type_name_is_kept_when_another_field_is_clicked() {
     assert!(harness.state().dialogs.type_rename.is_none());
 }
 
+#[test]
+fn wall_properties_open_the_layer_editor() {
+    let mut state = sample_state();
+    let wall = state.project().elements.values().find(|e| e.as_wall().is_some()).unwrap().id;
+    crate::wall_editor::open(&mut state, wall);
+    let mut harness = themed_harness(state, egui::vec2(1100.0, 800.0), egui::Theme::Light, |ui, state| {
+        crate::wall_editor::show(ui.ctx(), state);
+    });
+    harness.query_all_by_label(&t!("wall-editor-layers")).last().unwrap().click_accesskit();
+    harness.run();
+    assert!(harness.state().dialogs.wall_editor.as_ref().unwrap().layers_open);
+    harness.run();
+    harness.get_by_label(&t!("type-add-layer"));
+}
+
 /// The component library lists a folder's component files and loads the
 /// one picked into the project.
 #[test]

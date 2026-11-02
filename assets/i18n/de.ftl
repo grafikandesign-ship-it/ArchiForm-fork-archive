@@ -2087,3 +2087,12 @@ comp-env-equal = Gleichheit (EQ)
 cmd-desc-comp-equal = Hält eine Referenzebene mittig zwischen zwei parallelen: sie folgt, wenn diese sich bewegen.
 comp-env-hint-equal = Ebene { $count } von 3 klicken: eine äußere, die mittig gehaltene, die andere äußere · Esc beginnt neu
 comp-env-points = Punkte
+
+wall-editor-title = Wandeigenschaften
+wall-editor-save-new = Als neuen Typ speichern…
+wall-editor-layers = Wandschichten…
+wall-editor-exterior = Außen
+wall-editor-interior = Innen
+wall-editor-shared = Änderungen an diesem Typ betreffen alle Wände dieses Typs. Speichern Sie eine unabhängige Variante als neuen Typ.
+wall-editor-name-required = Geben Sie einen Typnamen ein.
+wall-editor-invalid-layers = Jede Wandschicht braucht eine positive Dicke.

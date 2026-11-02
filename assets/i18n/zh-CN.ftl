@@ -2088,3 +2088,12 @@ wall-preset-material-concrete = Concrete
 wall-preset-material-gypsum = Gypsum board
 wall-preset-material-insulation = Thermal insulation
 wall-preset-material-cavity = Framed cavity
+
+wall-editor-title = 墙体属性
+wall-editor-save-new = 另存为新类型…
+wall-editor-layers = 墙体分层…
+wall-editor-exterior = 外侧
+wall-editor-interior = 内侧
+wall-editor-shared = 修改此类型会影响所有使用它的墙体。要创建独立变体，请另存为新类型。
+wall-editor-name-required = 请输入类型名称。
+wall-editor-invalid-layers = 每个墙体层都必须具有正厚度。

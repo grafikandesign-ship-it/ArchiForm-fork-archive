@@ -37,6 +37,7 @@ pub enum PendingAction {
 
 #[derive(Default)]
 pub struct Dialogs {
+    pub wall_editor: Option<crate::wall_editor::WallEditor>,
     pub reference_import: Option<ReferenceImportDialog>,
     pub references: bool,
     /// Name entered in the status-bar layer menu.

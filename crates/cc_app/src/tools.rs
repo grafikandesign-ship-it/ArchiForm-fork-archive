@@ -2766,6 +2766,14 @@ fn select(
     let tol = 5.0 / xf.scale;
     let (ctrl, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
 
+    if resp.secondary_clicked()
+        && let Some(hit) = raw.and_then(|p| drawing.hit_test_line(p, tol).or_else(|| drawing.hit_test(p, tol)))
+        && state.project().element(hit).is_some_and(|e| e.as_wall().is_some())
+    {
+        crate::wall_editor::open(state, hit);
+        return;
+    }
+
     // Pre-selection highlight.
     if state.interaction.drag.is_none()
         && let Some(hit) = raw.and_then(|p| drawing.hit_test(p, tol))

@@ -2090,3 +2090,12 @@ wall-preset-material-concrete = Concrete
 wall-preset-material-gypsum = Gypsum board
 wall-preset-material-insulation = Thermal insulation
 wall-preset-material-cavity = Framed cavity
+
+wall-editor-title = ຄຸນສົມບັດຝາ
+wall-editor-save-new = ບັນທຶກເປັນປະເພດໃໝ່…
+wall-editor-layers = ຊັ້ນຂອງຝາ…
+wall-editor-exterior = ດ້ານນອກ
+wall-editor-interior = ດ້ານໃນ
+wall-editor-shared = ການແກ້ໄຂປະເພດນີ້ມີຜົນຕໍ່ຝາທຸກອັນທີ່ໃຊ້ມັນ. ບັນທຶກເປັນປະເພດໃໝ່ເພື່ອແຍກຕ່າງຫາກ.
+wall-editor-name-required = ປ້ອນຊື່ປະເພດ.
+wall-editor-invalid-layers = ທຸກຊັ້ນຂອງຝາຕ້ອງມີຄວາມໜາຫຼາຍກວ່າສູນ.

@@ -2088,3 +2088,12 @@ comp-env-equal = Рівність (EQ)
 cmd-desc-comp-equal = Тримає опорну площину посередині між двома паралельними: вона рухається разом із ними.
 comp-env-hint-equal = Клацніть площину { $count } з 3: зовнішню, ту, що посередині, іншу зовнішню · Esc починає заново
 comp-env-points = Точки
+
+wall-editor-title = Властивості стіни
+wall-editor-save-new = Зберегти як новий тип…
+wall-editor-layers = Шари стіни…
+wall-editor-exterior = Зовні
+wall-editor-interior = Всередині
+wall-editor-shared = Зміни цього типу вплинуть на всі стіни, що його використовують. Збережіть новий тип для незалежного варіанта.
+wall-editor-name-required = Введіть назву типу.
+wall-editor-invalid-layers = Кожен шар стіни повинен мати додатну товщину.

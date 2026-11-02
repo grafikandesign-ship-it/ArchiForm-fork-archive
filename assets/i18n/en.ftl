@@ -2086,3 +2086,12 @@ comp-env-equal = Equality (EQ)
 cmd-desc-comp-equal = Keeps a reference plane halfway between two parallel ones: it follows when they move.
 comp-env-hint-equal = Click plane { $count } of 3: an outer one, the one kept halfway, the other outer one · Esc starts over
 comp-env-points = Points
+
+wall-editor-title = Wall properties
+wall-editor-save-new = Save as new type…
+wall-editor-layers = Wall layers…
+wall-editor-exterior = Exterior
+wall-editor-interior = Interior
+wall-editor-shared = Changes to this type affect every wall using it. Save as a new type for an independent variant.
+wall-editor-name-required = Enter a type name.
+wall-editor-invalid-layers = Every wall layer needs a positive thickness.

@@ -2087,3 +2087,12 @@ comp-env-equal = Igualdade (EQ)
 cmd-desc-comp-equal = Mantém um plano de referência no meio de dois outros paralelos: ele acompanha quando eles se movem.
 comp-env-hint-equal = Clique o plano { $count } de 3: um externo, o que fica no meio, o outro externo · Esc recomeça
 comp-env-points = Pontos
+
+wall-editor-title = Propriedades da parede
+wall-editor-save-new = Salvar como novo tipo…
+wall-editor-layers = Camadas da parede…
+wall-editor-exterior = Exterior
+wall-editor-interior = Interior
+wall-editor-shared = Alterações neste tipo afetam todas as paredes que o utilizam. Salve como novo tipo para uma variante independente.
+wall-editor-name-required = Digite um nome para o tipo.
+wall-editor-invalid-layers = Cada camada da parede deve ter espessura positiva.

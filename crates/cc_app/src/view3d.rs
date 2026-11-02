@@ -377,6 +377,30 @@ pub fn show(ui: &mut Ui, state: &mut AppState, view_id: ViewId, render_state: Op
         }
     }
 
+    // A right click selects a wall and opens its dedicated properties dialog.
+    // Right dragging still pans the camera.
+    let mut wall_context_pick = None;
+    if resp.secondary_clicked()
+        && !zooming
+        && state.tool == crate::tools::Tool::Select
+        && let Some(pos) = resp.interact_pointer_pos()
+    {
+        let nx = (pos.x - rect.left()) / rect.width() * 2.0 - 1.0;
+        let ny = 1.0 - (pos.y - rect.top()) / rect.height() * 2.0;
+        let ray = pick_ray(&v3.camera, aspect, nx, ny);
+        let project = &state.session.doc.project;
+        let temporary = state.session.temporary(view_id);
+        let picked = match project.view(view_id) {
+            Some(view) => {
+                let mut resolver = cc_views::graphics::Resolver::new(project, geom, view, temporary);
+                geom.pick_where(ray, &mut |e| resolver.style(e).is_some())
+            }
+            None => geom.pick(ray, &[]),
+        };
+        wall_context_pick =
+            picked.filter(|(id, _)| project.element(*id).is_some_and(|e| e.as_wall().is_some())).map(|(id, _)| id);
+    }
+
     // Upload geometry when the model or selection changed; a new selection
     // or temporary visibility only repaints the triangles and edges kept.
     let revision = state.session.doc.revision();
@@ -514,6 +538,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState, view_id: ViewId, render_state: Op
         v3.camera_dirty = false;
         let camera = v3.camera;
         state.session.set_view_camera(view_id, camera);
+    }
+    if let Some(id) = wall_context_pick {
+        crate::wall_editor::open(state, id);
     }
 }
 

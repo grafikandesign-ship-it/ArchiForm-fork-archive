@@ -176,7 +176,11 @@ fn element_props(ui: &mut Ui, state: &mut AppState, id: ElementId) {
                     }
                 });
             if ui.add_sized([button_w, 22.0], egui::Button::new(t!("props-edit-type"))).clicked() {
-                state.dialogs.type_editor = Some(el.type_id);
+                if el.as_wall().is_some() {
+                    crate::wall_editor::open(state, id);
+                } else {
+                    state.dialogs.type_editor = Some(el.type_id);
+                }
             }
         });
     });

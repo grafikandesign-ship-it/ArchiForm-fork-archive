@@ -2087,3 +2087,12 @@ comp-env-equal = Igualdad (EQ)
 cmd-desc-comp-equal = Mantiene un plano de referencia a medio camino entre otros dos paralelos: lo sigue cuando se mueven.
 comp-env-hint-equal = Haga clic en el plano { $count } de 3: uno exterior, el que queda en medio, el otro exterior · Esc empieza de nuevo
 comp-env-points = Puntos
+
+wall-editor-title = Propiedades del muro
+wall-editor-save-new = Guardar como tipo nuevo…
+wall-editor-layers = Capas del muro…
+wall-editor-exterior = Exterior
+wall-editor-interior = Interior
+wall-editor-shared = Los cambios en este tipo afectan a todos los muros que lo usan. Guarde un tipo nuevo para una variante independiente.
+wall-editor-name-required = Introduzca un nombre de tipo.
+wall-editor-invalid-layers = Cada capa del muro debe tener un espesor positivo.

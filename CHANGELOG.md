@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-11-02
+
+### Added
+
+- A wall-specific properties dialog opens by right-clicking a wall in plan or 3D, or from its Properties panel. It shows instance and type settings with an immediate 2D wall section preview.
+- The wall dialog opens a separate layer editor for material, function, thickness and layer order. Changes stay in a draft until Save; Save as New Type creates an independent wall type for the selected wall.
+
 ## [0.8.3] - 2026-11-01
 
 ### Changed
