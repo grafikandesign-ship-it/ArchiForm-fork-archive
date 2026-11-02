@@ -14,7 +14,7 @@ use cc_engine::Ref;
 use egui::{Color32, Context, DragValue, Pos2, RichText, Stroke, Ui, vec2};
 
 pub struct WallEditor {
-    id: ElementId,
+    id: Option<ElementId>,
     ty: ElementType,
     wall: Wall,
     pub(crate) layers_open: bool,
@@ -26,12 +26,28 @@ pub fn open(state: &mut AppState, id: ElementId) {
     let Some(wall) = element.as_wall().cloned() else { return };
     let Some(ty) = state.project().element_type(element.type_id).cloned() else { return };
     state.selection = std::iter::once(id).collect();
-    state.dialogs.wall_editor = Some(WallEditor { id, ty, wall, layers_open: false, layers_before: Vec::new() });
+    state.dialogs.wall_editor =
+        Some(WallEditor { id: Some(id), ty, wall, layers_open: false, layers_before: Vec::new() });
+}
+
+/// Edit the active wall type and the defaults for walls not yet drawn.
+pub fn open_type(state: &mut AppState, type_id: cc_core::ElementTypeId) {
+    let Some(ty) = state.project().element_type(type_id).filter(|ty| ty.category() == cc_core::Category::Wall).cloned()
+    else {
+        return;
+    };
+    let wall = Wall {
+        height: state.wall_height,
+        top: state.wall_top_level.map_or(WallTop::Unconnected, |level| WallTop::Level { level, offset: 0.0 }),
+        location_line: state.wall_location_line,
+        ..Default::default()
+    };
+    state.dialogs.wall_editor = Some(WallEditor { id: None, ty, wall, layers_open: false, layers_before: Vec::new() });
 }
 
 pub fn show(ctx: &Context, state: &mut AppState) {
     let Some(mut editor) = state.dialogs.wall_editor.take() else { return };
-    if state.project().element(editor.id).and_then(|e| e.as_wall()).is_none() {
+    if editor.id.is_some_and(|id| state.project().element(id).and_then(|e| e.as_wall()).is_none()) {
         return;
     }
     let width = (ctx.content_rect().width() - 90.0).clamp(520.0, 780.0);
@@ -65,7 +81,11 @@ pub fn show(ctx: &Context, state: &mut AppState) {
 }
 
 fn main_body(ui: &mut Ui, state: &AppState, editor: &mut WallEditor) {
-    ui.label(theme::muted(format!("{} · {}", state.project().type_name(editor.ty.id), editor.id)).size(12.0));
+    let subtitle = editor.id.map_or_else(
+        || state.project().type_name(editor.ty.id).to_string(),
+        |id| format!("{} · {id}", state.project().type_name(editor.ty.id)),
+    );
+    ui.label(theme::muted(subtitle).size(12.0));
     ui.add_space(8.0);
     let max_height = (ui.ctx().content_rect().height() - 170.0).clamp(330.0, 620.0);
     egui::ScrollArea::vertical().max_height(max_height).auto_shrink([false, true]).show(ui, |ui| {
@@ -244,7 +264,7 @@ fn show_layers(ctx: &Context, state: &AppState, editor: &mut WallEditor) {
     }
 }
 
-fn paint_preview(ui: &mut Ui, state: &AppState, layers: &[Layer], height: f32) {
+pub(crate) fn paint_preview(ui: &mut Ui, state: &AppState, layers: &[Layer], height: f32) {
     let width = ui.available_width().max(180.0);
     let (rect, _) = ui.allocate_exact_size(vec2(width, height), egui::Sense::hover());
     let p = ui.painter_at(rect);
@@ -310,7 +330,7 @@ fn commit(state: &mut AppState, editor: &WallEditor, new_type: bool) -> bool {
     }
     let start = state.session.doc.undo_depth();
     let old_ty = state.project().element_type(editor.ty.id).cloned();
-    if state.project().element(editor.id).is_none() {
+    if editor.id.is_some_and(|id| state.project().element(id).is_none()) {
         return true;
     }
     let Some(old_ty) = old_ty else { return true };
@@ -320,7 +340,7 @@ fn commit(state: &mut AppState, editor: &WallEditor, new_type: bool) -> bool {
         let command = cc_engine::commands::types::TypeDuplicate {
             type_ref: Ref::Id(old_ty.id.0),
             name: Some(name),
-            elements: vec![editor.id.0],
+            elements: editor.id.map_or_else(Vec::new, |id| vec![id.0]),
         };
         let Some(id) = actions::run_command(state, command).and_then(|v| v["id"].as_u64()) else { return false };
         target = cc_core::ElementTypeId(id);
@@ -338,15 +358,29 @@ fn commit(state: &mut AppState, editor: &WallEditor, new_type: bool) -> bool {
         state.session.undo_to(start);
         return false;
     }
+    if editor.id.is_none() {
+        if new_type {
+            state.tool = state.tool.with_type(target);
+        }
+        state.wall_height = editor.wall.height;
+        state.wall_top_level = match editor.wall.top {
+            WallTop::Unconnected => None,
+            WallTop::Level { level, .. } => Some(level),
+        };
+        state.wall_location_line = editor.wall.location_line;
+        state.session.doc.break_merge();
+        return true;
+    }
+    let Some(id) = editor.id else { return true };
     let draft_wall = editor.wall.clone();
     // TypeDuplicate already reassigns the wall; compare against the current
     // element so an unchanged instance is not mistaken for a failed edit.
     let changed = state
         .project()
-        .element(editor.id)
+        .element(id)
         .is_some_and(|current| current.as_wall() != Some(&draft_wall) || current.type_id != target);
     if changed
-        && !crate::engine_edit::element(state, editor.id, None, |el| {
+        && !crate::engine_edit::element(state, id, None, |el| {
             el.type_id = target;
             el.kind = cc_core::ElementKind::Wall(draft_wall);
         })
@@ -401,5 +435,26 @@ mod tests {
         assert!((element.as_wall().unwrap().height - old_height - 0.25).abs() < 1e-9);
         assert_eq!(element.type_id, editor.ty.id);
         assert_eq!(state.project().element_type(editor.ty.id).unwrap().data, editor.ty.data);
+    }
+
+    #[test]
+    fn type_properties_before_placement_keep_the_original_when_saved_as_new() {
+        let (mut state, id) = sample();
+        let original = state.project().element(id).unwrap().type_id;
+        let original_thickness = state.project().element_type(original).unwrap().thickness();
+        state.set_tool(crate::tools::Tool::Wall { type_id: original });
+        open_type(&mut state, original);
+        let mut editor = state.dialogs.wall_editor.take().unwrap();
+        editor.wall.height = 4.0;
+        if let TypeData::Wall { layers, .. } = &mut editor.ty.data {
+            layers[0].thickness += 0.02;
+        }
+        assert!(commit(&mut state, &editor, true), "{}", state.message);
+        let created = state.tool.type_id().unwrap();
+        assert_ne!(created, original);
+        assert_eq!(state.project().element(id).unwrap().type_id, original);
+        assert_eq!(state.project().element_type(original).unwrap().thickness(), original_thickness);
+        assert!((state.project().element_type(created).unwrap().thickness() - original_thickness - 0.02).abs() < 1e-9);
+        assert_eq!(state.wall_height, 4.0);
     }
 }

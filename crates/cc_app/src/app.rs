@@ -478,7 +478,18 @@ impl ConstructApp {
                 if env {
                     crate::component_env::panel(ui, state);
                 } else {
-                    browser::show(ui, state);
+                    if matches!(state.tool, crate::tools::Tool::Wall { .. }) {
+                        ui.horizontal(|ui| {
+                            ui.selectable_value(&mut state.wall_catalog_visible, true, t!("wall-presets-menu"));
+                            ui.selectable_value(&mut state.wall_catalog_visible, false, t!("browser-title"));
+                        });
+                        ui.separator();
+                    }
+                    if state.wall_catalog_visible && matches!(state.tool, crate::tools::Tool::Wall { .. }) {
+                        crate::wall_catalog::show(ui, state);
+                    } else {
+                        browser::show(ui, state);
+                    }
                 }
             });
         if !env {

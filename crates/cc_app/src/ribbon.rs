@@ -700,7 +700,32 @@ fn architecture_tab(ui: &mut Ui, state: &mut AppState) {
         command_buttons(ui, state, &[place(Mass), UiCommand::PushPull]);
         stacks(ui, state, &[&[UiCommand::MassWalls, UiCommand::MassSlabs, UiCommand::MassRoof]]);
     });
-    group(ui, t!("group-build"), |ui| command_buttons(ui, state, &buttons(&[Wall, Door, Window])));
+    group(ui, t!("group-build"), |ui| {
+        let wall = place(Wall);
+        let response = command_big(ui, state, wall, false);
+        if response.clicked() {
+            commands::run(state, &ui.ctx().clone(), wall);
+        }
+        response.context_menu(|ui| {
+            if ui.button(t!("wall-editor-title")).clicked() {
+                if !matches!(state.tool, Tool::Wall { .. }) {
+                    commands::run(state, &ui.ctx().clone(), wall);
+                }
+                if let Some(id) = state.tool.type_id() {
+                    crate::wall_editor::open_type(state, id);
+                }
+                ui.close();
+            }
+            if ui.button(t!("wall-presets-menu")).clicked() {
+                if !matches!(state.tool, Tool::Wall { .. }) {
+                    commands::run(state, &ui.ctx().clone(), wall);
+                }
+                state.wall_catalog_visible = true;
+                ui.close();
+            }
+        });
+        command_buttons(ui, state, &buttons(&[Door, Window]));
+    });
     group(ui, t!("group-horizontal"), |ui| command_buttons(ui, state, &buttons(&[Floor, Ceiling, Roof])));
     group(ui, t!("group-circulation"), |ui| command_buttons(ui, state, &buttons(&[Stair, Ramp, Railing])));
     group(ui, t!("group-room"), |ui| command_button(ui, state, place(Room)));
@@ -1038,38 +1063,9 @@ pub fn options_bar(ui: &mut Ui, state: &mut AppState) {
                 ui.label(theme::muted(t!("hint-select")));
             }
             Tool::Wall { .. } => {
-                ui.menu_button(t!("wall-presets-menu"), |ui| {
-                    for category in cc_engine::commands::wall_presets::WallPresetCategory::ALL {
-                        ui.menu_button(crate::i18n::tr(category.key()), |ui| {
-                            egui::ScrollArea::vertical().max_height(450.0).show(ui, |ui| {
-                                for preset in cc_engine::commands::wall_presets::catalog()
-                                    .iter()
-                                    .filter(|p| p.category == category)
-                                {
-                                    let installed = state
-                                        .project()
-                                        .types_of(Category::Wall)
-                                        .find(|ty| ty.info.type_mark == preset.id)
-                                        .map(|ty| ty.id);
-                                    let selected = installed == state.tool.type_id();
-                                    let label = format!("{} · {}", preset.name(), format::length(preset.thickness()));
-                                    if ui.selectable_label(selected, label).clicked() {
-                                        let command = cc_engine::commands::wall_presets::WallPresetAdd {
-                                            preset: preset.id.into(),
-                                        };
-                                        if let Some(id) =
-                                            crate::actions::run_command(state, command).and_then(|o| o["id"].as_u64())
-                                        {
-                                            state.tool = state.tool.with_type(cc_core::ElementTypeId(id));
-                                        }
-                                        ui.close();
-                                    }
-                                }
-                            });
-                        });
-                    }
-                    ui.label(theme::muted(t!("wall-presets-hint")));
-                });
+                if ui.button(t!("wall-presets-menu")).clicked() {
+                    state.wall_catalog_visible = true;
+                }
                 ui.separator();
                 // Straight walls, or arcs through a third point.
                 let mut arc = state.wall_arc;

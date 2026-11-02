@@ -163,6 +163,8 @@ pub struct AppState {
     pub wall_arc: bool,
     /// Level new walls rise to (`None`: unconnected, `wall_height` tall).
     pub wall_top_level: Option<LevelId>,
+    /// Show the wall type catalog instead of the project browser while drawing walls.
+    pub wall_catalog_visible: bool,
     /// Allow the window to close after the user confirmed.
     pub quit_confirmed: bool,
     /// egui textures of closed 3D views, freed by the app when the GPU is available.
@@ -238,6 +240,7 @@ impl AppState {
             ramp_layout: Default::default(),
             wall_arc: false,
             wall_top_level: None,
+            wall_catalog_visible: false,
             quit_confirmed: false,
             textures_to_free: Vec::new(),
             generation: 0,
@@ -355,6 +358,7 @@ impl AppState {
     }
 
     pub fn set_tool(&mut self, tool: Tool) {
+        self.wall_catalog_visible = matches!(tool, Tool::Wall { .. });
         self.tool = tool;
         self.interaction = Interaction::default();
         self.typed.clear();

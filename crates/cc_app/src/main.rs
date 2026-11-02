@@ -51,6 +51,7 @@ mod update;
 mod update_install;
 mod view3d;
 mod view_cube;
+mod wall_catalog;
 mod wall_editor;
 
 pub(crate) const APP_NAME: &str = "ArchiForm";
