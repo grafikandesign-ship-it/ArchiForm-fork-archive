@@ -178,6 +178,8 @@ fn element_props(ui: &mut Ui, state: &mut AppState, id: ElementId) {
             if ui.add_sized([button_w, 22.0], egui::Button::new(t!("props-edit-type"))).clicked() {
                 if el.as_wall().is_some() {
                     crate::wall_editor::open(state, id);
+                } else if matches!(&el.kind, ElementKind::Door(_)) {
+                    crate::door_editor::open_type(state, el.type_id);
                 } else {
                     state.dialogs.type_editor = Some(el.type_id);
                 }
@@ -847,6 +849,17 @@ fn mass_props(ui: &mut Ui, state: &mut AppState, el: &Element, m: &cc_core::mass
         });
         let shape = if m.top.is_some() { t!("mass-loft") } else { t!("mass-extrusion") };
         readonly_row(ui, &t!("prop-mass-shape"), shape);
+        let mut visual_solid = m.visual_solid;
+        if row(ui, &t!("mass-mode-visual"), |ui| ui.checkbox(&mut visual_solid, "")).changed() {
+            modify(state, id, "mass-visual-solid", |e| {
+                if let ElementKind::Mass(m) = &mut e.kind {
+                    m.visual_solid = visual_solid;
+                }
+            });
+        }
+        if ui.button(t!("mass-convert-to-walls")).clicked() {
+            actions::from_masses(state, "replace-walls");
+        }
     });
     let geom = state.session.geom().masses.get(&id).cloned();
     section(ui, "mass-floors", t!("section-mass-floors"), |ui| {

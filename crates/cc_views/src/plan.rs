@@ -602,10 +602,21 @@ fn draw_openings(d: &mut Drawing2D, project: &Project, geom: &ModelGeometry, g: 
         let Some(host) = e.as_hosted() else { continue };
         let id = Some(e.id);
         // A door or window component may draw its own symbol: its pieces marked for plans.
-        let own_symbol = match project.element_type(e.type_id).map(|t| &t.data) {
-            Some(cc_core::TypeData::Component { def, .. }) => def.opening.as_ref().is_some_and(|o| o.own_symbol),
-            _ => false,
+        let door_style = match project.element_type(e.type_id).map(|t| &t.data) {
+            Some(cc_core::TypeData::Component { def, .. }) => {
+                if def.opening.as_ref().is_some_and(|o| o.own_symbol) {
+                    "custom"
+                } else if def.items.iter().any(|p| p.name.to_lowercase().contains("sliding")) {
+                    "sliding"
+                } else if def.items.iter().any(|p| p.name.to_lowercase().contains("leaf b")) {
+                    "double"
+                } else {
+                    "single"
+                }
+            }
+            _ => "single",
         };
+        let own_symbol = door_style == "custom";
         if own_symbol {
             if !ceiling {
                 for p in geom.opening_fills.get(&e.id).into_iter().flatten().filter(|p| p.in_plan && !p.void) {
@@ -615,11 +626,30 @@ fn draw_openings(d: &mut Drawing2D, project: &Project, geom: &ModelGeometry, g: 
             continue;
         }
         match e.kind {
-            ElementKind::Door(_) if !ceiling => {
-                let symbol = door_plan_symbol(g, o.u0, o.u1, host.flip_facing, host.flip_hand);
-                d.line(symbol.hinge, symbol.leaf_end, LineStyle::Projection, id);
-                d.polyline(&symbol.arc_points(), false, LineStyle::Thin, id);
-            }
+            ElementKind::Door(_) if !ceiling => match door_style {
+                "double" => {
+                    for (a, b, flip) in [(o.u0, (o.u0 + o.u1) * 0.5, false), ((o.u0 + o.u1) * 0.5, o.u1, true)] {
+                        let symbol = door_plan_symbol(g, a, b, host.flip_facing, flip ^ host.flip_hand);
+                        d.line(symbol.hinge, symbol.leaf_end, LineStyle::Projection, id);
+                        d.polyline(&symbol.arc_points(), false, LineStyle::Thin, id);
+                    }
+                }
+                "sliding" => {
+                    for (a, b) in [(o.u0, (o.u0 + o.u1) * 0.5), ((o.u0 + o.u1) * 0.5, o.u1)] {
+                        d.polyline(
+                            &g.path(a, b, if a == o.u0 { -0.02 } else { 0.02 }),
+                            false,
+                            LineStyle::Projection,
+                            id,
+                        );
+                    }
+                }
+                _ => {
+                    let symbol = door_plan_symbol(g, o.u0, o.u1, host.flip_facing, host.flip_hand);
+                    d.line(symbol.hinge, symbol.leaf_end, LineStyle::Projection, id);
+                    d.polyline(&symbol.arc_points(), false, LineStyle::Thin, id);
+                }
+            },
             ElementKind::Window(_) => {
                 for line in window_plan_lines(g, o.u0, o.u1) {
                     d.polyline(&line, false, LineStyle::Thin, id);

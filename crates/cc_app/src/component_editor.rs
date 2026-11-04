@@ -657,6 +657,14 @@ fn shape_fields(
             ui.label(t!("comp-mesh-size", "vertices" => vertices.len(), "faces" => faces.len()));
             ui.end_row();
         }
+        ComponentShape::ParametricMesh { vertices, faces, scale_x, scale_y, scale_z } => {
+            ui.label(theme::muted(t!("comp-field-parametric-mesh")));
+            ui.label(t!("comp-mesh-size", "vertices" => vertices.len(), "faces" => faces.len()));
+            ui.end_row();
+            field(ui, &t!("comp-field-scale-x"), scale_x);
+            field(ui, &t!("comp-field-scale-y"), scale_y);
+            field(ui, &t!("comp-field-scale-z"), scale_z);
+        }
     }
 }
 
@@ -738,14 +746,16 @@ fn profile_points(
 
 /// How a preview looks at the pieces: a rotation taking the viewer's
 /// direction to +Z (so the edges seen from above are the ones it shows).
-fn view_transform(view: usize) -> impl Fn(DVec3) -> DVec3 {
+fn view_transform(view: usize, orbit: [f32; 2]) -> impl Fn(DVec3) -> DVec3 {
     move |p: DVec3| match view {
         0 => p,
         // From the front (-Y), Z up.
         1 => DVec3::new(p.x, p.z, -p.y),
         // From the front, right and above.
         _ => {
-            let eye = DVec3::new(1.0, -1.0, 1.0).normalize();
+            let yaw = f64::from(orbit[0]).to_radians();
+            let pitch = f64::from(orbit[1]).to_radians();
+            let eye = DVec3::new(pitch.cos() * yaw.sin(), -pitch.cos() * yaw.cos(), pitch.sin()).normalize();
             let right = (-eye).cross(DVec3::Z).normalize();
             let up = right.cross(-eye);
             DVec3::new(p.dot(right), p.dot(up), p.dot(eye))
@@ -759,10 +769,14 @@ type PieceEdges = (usize, bool, Vec<(DVec2, DVec2)>);
 /// Plan (top), front (from -Y) and 3D views of the pieces, voids cut out
 /// (and drawn in the warning color); the selected piece is highlighted.
 fn preview(ui: &mut Ui, ed: &Editor) {
+    preview_definition(ui, &ed.def, ed.selected);
+}
+
+pub(crate) fn preview_definition(ui: &mut Ui, def: &ComponentDef, selected: usize) {
     ui.label(theme::title(t!("comp-preview")));
-    let mut solids = cc_geom::resolve_component_in(&ed.def, &Default::default(), PREVIEW_WALL);
+    let mut solids = cc_geom::resolve_component_in(def, &Default::default(), PREVIEW_WALL);
     solids.retain(|p| !p.plan_only);
-    let (all, _) = ed.def.resolve_in(&Default::default(), PREVIEW_WALL);
+    let (all, _) = def.resolve_in(&Default::default(), PREVIEW_WALL);
     let pieces: Vec<(usize, bool, Vec<Vec<DVec3>>)> = solids
         .iter()
         .map(|p| (p.item, false, cc_geom::component::faces_of(p)))
@@ -771,8 +785,22 @@ fn preview(ui: &mut Ui, ed: &Editor) {
     let width = ui.available_width();
     let size = vec2(width, 172.0);
     let labels = [t!("comp-preview-plan"), t!("comp-preview-front"), t!("comp-preview-3d")];
+    let orbit_id = ui.make_persistent_id("component-preview-orbit");
+    let mut orbit = ui.ctx().data(|d| d.get_temp::<[f32; 2]>(orbit_id)).unwrap_or([45.0, 35.26]);
     for (view, label) in labels.iter().enumerate() {
         let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+        if view == 2 {
+            let response = ui
+                .interact(rect, orbit_id, Sense::drag())
+                .on_hover_cursor(egui::CursorIcon::Grab)
+                .on_hover_text(t!("door-preview-rotate"));
+            if response.dragged() {
+                let delta = ui.input(|i| i.pointer.delta());
+                orbit[0] += delta.x * 0.65;
+                orbit[1] = (orbit[1] - delta.y * 0.65).clamp(-88.0, 88.0);
+                ui.ctx().data_mut(|d| d.insert_temp(orbit_id, orbit));
+            }
+        }
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 4.0, PALETTE.sheet_bg);
         painter.text(
@@ -783,7 +811,7 @@ fn preview(ui: &mut Ui, ed: &Editor) {
             PALETTE.text_muted,
         );
         // Edges of every piece seen in this view, in drawing coordinates.
-        let look = view_transform(view);
+        let look = view_transform(view, orbit);
         let edges: Vec<PieceEdges> = pieces
             .iter()
             .map(|(item, void, faces)| {
@@ -809,6 +837,42 @@ fn preview(ui: &mut Ui, ed: &Editor) {
             let q = (p - center) * k;
             Pos2::new(inner.center().x + q.x as f32, inner.center().y - q.y as f32)
         };
+        if view == 2 {
+            let mut faces: Vec<(f64, usize, Vec<Pos2>, bool)> = pieces
+                .iter()
+                .flat_map(|(item, void, fs)| {
+                    fs.iter().filter_map(|face| {
+                        let projected: Vec<DVec3> = face.iter().map(|p| look(*p)).collect();
+                        (projected.len() >= 3).then(|| {
+                            (
+                                projected.iter().map(|p| p.z).sum::<f64>() / projected.len() as f64,
+                                *item,
+                                projected.iter().map(|p| to(p.truncate())).collect(),
+                                *void,
+                            )
+                        })
+                    })
+                })
+                .collect();
+            faces.sort_by(|a, b| a.0.total_cmp(&b.0));
+            for (_, item, points, void) in faces {
+                let glass = def.items.get(item).is_some_and(|piece| {
+                    let name = piece.name.to_lowercase();
+                    name.contains("glazing") || name.contains("vetro")
+                });
+                painter.add(egui::Shape::convex_polygon(
+                    points,
+                    if void {
+                        Color32::from_rgba_unmultiplied(190, 55, 50, 70)
+                    } else if glass {
+                        Color32::from_rgba_unmultiplied(110, 190, 220, 105)
+                    } else {
+                        Color32::from_rgba_unmultiplied(155, 125, 90, 210)
+                    },
+                    Stroke::new(0.8, if glass { Color32::from_rgb(55, 125, 155) } else { Color32::from_gray(65) }),
+                ));
+            }
+        }
         // Origin cross.
         let o = to(look(DVec3::ZERO).truncate());
         if inner.expand(10.0).contains(o) {
@@ -816,7 +880,6 @@ fn preview(ui: &mut Ui, ed: &Editor) {
             painter.line_segment([o - vec2(6.0, 0.0), o + vec2(6.0, 0.0)], s);
             painter.line_segment([o - vec2(0.0, 6.0), o + vec2(0.0, 6.0)], s);
         }
-        let selected = ed.selected;
         let order = edges.iter().filter(|(i, ..)| *i != selected).chain(edges.iter().filter(|(i, ..)| *i == selected));
         for (item, void, lines) in order {
             let color = match (*item == selected, *void) {
@@ -830,7 +893,7 @@ fn preview(ui: &mut Ui, ed: &Editor) {
             }
         }
         // Connectors: a dot in the color of their system.
-        for k in ed.def.resolve_connectors(&Default::default()) {
+        for k in def.resolve_connectors(&Default::default()) {
             let [r, g, b] = k.system.default_color();
             let at = to(look(k.point).truncate());
             painter.circle(at, 4.0, Color32::from_rgb(r, g, b), Stroke::new(1.0, Color32::WHITE));

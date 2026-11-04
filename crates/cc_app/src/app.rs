@@ -485,8 +485,19 @@ impl ConstructApp {
                         });
                         ui.separator();
                     }
+                    if matches!(state.tool, crate::tools::Tool::Hosted { category: cc_core::Category::Door, .. }) {
+                        ui.horizontal(|ui| {
+                            ui.selectable_value(&mut state.door_catalog_visible, true, t!("door-library-title"));
+                            ui.selectable_value(&mut state.door_catalog_visible, false, t!("browser-title"));
+                        });
+                        ui.separator();
+                    }
                     if state.wall_catalog_visible && matches!(state.tool, crate::tools::Tool::Wall { .. }) {
                         crate::wall_catalog::show(ui, state);
+                    } else if state.door_catalog_visible
+                        && matches!(state.tool, crate::tools::Tool::Hosted { category: cc_core::Category::Door, .. })
+                    {
+                        crate::door_catalog::show(ui, state);
                     } else {
                         browser::show(ui, state);
                     }

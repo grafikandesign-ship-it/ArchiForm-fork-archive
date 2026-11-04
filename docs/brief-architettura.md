@@ -6,6 +6,12 @@ Stato: **inventario con decisioni di ambito concordate; implementazione da defin
 
 Portare rapidamente una pianta verificabile a un modello architettonico parametrico, navigabile e trasferibile via IFC4. Il flusso principale è: livelli e riferimenti → muri → aperture → solai e coperture → scale e ringhiere → vani → controllo in 3D → tavole. La modellazione libera e gli arredi restano una fase successiva. Un comando deve essere disponibile anche nel motore/CLI/MCP, non soltanto nella GUI.
 
+## Due flussi per l'esistente e la visualizzazione
+
+ArchiForm distingue la modellazione BIM dalla costruzione di geometrie per visualizzazione e render. Un volume libero è utile per ricalcare una forma irregolare da un PDF calibrato, ma da solo non ospita porte/finestre e non viene esportato in IFC. Quando il volume deve avere aperture o passare a un modello BIM, il flusso concordato è **Volume di visualizzazione → Converti il volume in muri BIM**. La conversione crea segmenti di muro lungo il contorno, li collega ai comandi esistenti per porte e finestre e sostituisce il volume nella stessa operazione annullabile. I muri così generati vengono esportati in IFC4 con le relazioni di apertura e riempimento.
+
+La conversione iniziale applica un tipo di muro a tutti i lati; l'utente può poi assegnare tipi diversi ai singoli segmenti dove cambiano gli spessori. Questo mantiene le aperture e l'export BIM senza introdurre una geometria muro personalizzata non ospitante. Il volume non convertito resta adatto alla resa 3D e non entra nell'IFC. L'export diretto della geometria di visualizzazione in OBJ/GLB è un'esigenza separata, da valutare dopo il primo collaudo del flusso aperture → IFC.
+
 ## Inventario della scheda Architettura di ARCHLine.XP 2021
 
 | Area | Funzioni osservate nell'interfaccia | Lettura per ArchiForm |
@@ -39,7 +45,7 @@ L'inventario riguarda i comandi **visibili nella versione locale 2021**. Non son
 | Solai, controsoffitti, tetti | Presente, da estendere | Categorie e comandi di creazione, contorni e fori ove previsti. Valutare gli automatismi dai muri, l'editor specifico e i casi complessi. |
 | Scale, rampe, ringhiere | Presente, da verificare | Categorie, strumenti e comandi; il collaudo dell'oggetto scala deve controllare inizio, freccia e numerazione, prima di applicarlo a Bergem. |
 | Vani | Presente, da rifinire | Categoria Room e generazione dai muri; verificare aggiornamento, parametri e collegamento alle finiture. |
-| Masse | Presente | Massa, spingi/tira, conversione in muri, solai e tetto nel ribbon Architettura. |
+| Masse e volumi per render | Presente, da estendere | Massa concettuale trasparente; volume opaco tracciabile per visualizzazione; conversione sostitutiva in segmenti di muri BIM per porte/finestre e IFC4. Verificare l'assegnazione di tipi diversi per i lati con spessori variabili. |
 | Colonne, travi, fondazioni | Presente in Struttura | Evitare duplicazione del modello; eventualmente solo scorciatoie nella scheda Architettura. |
 | Disegni di riferimento | Presente | Import CAD e riferimenti immagine/PDF fanno parte del flusso esistente; verificarne l'uso nel tracciamento dell'esistente. |
 | Terreno, rilievo, nuvole di punti, vetrata continua nativa | Lacune o ambiti non ancora nativi | `Category` non definisce terreno, rilievo, nuvola di punti o curtain wall. Richiedono una scelta di modello dati prima di introdurre comandi UI. |
@@ -53,6 +59,7 @@ Questa tabella descrive **presenza di infrastruttura**, non certifica completezz
 3. **Elementi orizzontali e circolazione.** Solai e fori, controsoffitti, tetti, scale, rampe e ringhiere. Per le scale verificare in modo mirato verso di salita, gradino iniziale, numerazione e riferimenti ai piani.
 4. **Vani e controllo del modello.** Aggiornamento automatico di area/volume, zone e abachi; controlli di elementi non ospitati e livelli incoerenti. Le tavole appartengono alla successiva rifinitura della Presentazione, ma devono poter leggere il modello.
 5. **Terreno semplice, a bassa priorità.** Includere nel completamento di Architettura un terreno editabile con contorno, quota e punti/pendenza essenziali, senza presupporre un rilievo topografico. Sbancamenti, strade, nuvole di punti e integrazione geografica richiedono una successiva valutazione separata.
+6. **Esistente irregolare e render.** Tracciare volumi liberi su riferimenti calibrati; quando servono aperture o IFC, convertirli in muri BIM segmentati. OBJ/GLB diretto per forme libere resta da progettare dopo aver verificato il flusso di conversione.
 
 ### Criteri per considerare chiuso il gruppo
 
@@ -60,6 +67,7 @@ Questa tabella descrive **presenza di infrastruttura**, non certifica completezz
 - Per ciascun oggetto, gli edit passano anche da comandi del motore, senza dipendere esclusivamente dalla GUI.
 - Bergem potrà essere usato successivamente come caso reale, con distinzione fra strutture esistenti, geometrie stimate e discordanze documentate; non è il primo collaudo.
 - Porte, finestre, scale, solai e tetto sono editabili dopo l'inserimento; le modifiche aggiornano pianta, 3D e IFC4 senza perdere l'identità degli elementi.
+- I volumi lunghi e sottili usati come muri si convertono in singoli muri BIM sul loro asse, con spessore scelto in base alla massa; cliccando con Porta o Finestra su una massa compatibile, ArchiForm la converte e inserisce direttamente l'apertura. Per masse di edificio, la conversione crea muri perimetrali. Il volume sorgente viene rimosso nello stesso flusso annullabile; l'IFC4 contiene muri, aperture e riempimenti coerenti.
 - Il progetto si salva e riapre; annullamento e copia del tipo sono prevedibili; gli errori non danneggiano il documento.
 - La versione rimane fissa durante lo sviluppo; si prova solo l'eseguibile portatile Windows. Il rilascio multipiattaforma avviene dopo l'accettazione del gruppo, come definito in `docs/development-workflow.md`.
 

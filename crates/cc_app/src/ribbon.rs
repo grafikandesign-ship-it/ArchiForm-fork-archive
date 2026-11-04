@@ -724,7 +724,30 @@ fn architecture_tab(ui: &mut Ui, state: &mut AppState) {
                 ui.close();
             }
         });
-        command_buttons(ui, state, &buttons(&[Door, Window]));
+        let door = place(Door);
+        let response = command_big(ui, state, door, false);
+        if response.clicked() {
+            commands::run(state, &ui.ctx().clone(), door);
+        }
+        response.context_menu(|ui| {
+            if ui.button(t!("door-properties-title")).clicked() {
+                if !matches!(state.tool, Tool::Hosted { category: Category::Door, .. }) {
+                    commands::run(state, &ui.ctx().clone(), door);
+                }
+                if let Some(id) = state.tool.type_id() {
+                    crate::door_editor::open_type(state, id);
+                }
+                ui.close();
+            }
+            if ui.button(t!("door-library-title")).clicked() {
+                if !matches!(state.tool, Tool::Hosted { category: Category::Door, .. }) {
+                    commands::run(state, &ui.ctx().clone(), door);
+                }
+                state.door_catalog_visible = true;
+                ui.close();
+            }
+        });
+        command_button(ui, state, place(Window));
     });
     group(ui, t!("group-horizontal"), |ui| command_buttons(ui, state, &buttons(&[Floor, Ceiling, Roof])));
     group(ui, t!("group-circulation"), |ui| command_buttons(ui, state, &buttons(&[Stair, Ramp, Railing])));
@@ -1052,6 +1075,9 @@ pub fn options_bar(ui: &mut Ui, state: &mut AppState) {
                 });
             if selected != type_id {
                 state.tool = state.tool.with_type(selected);
+                if category == Category::Door {
+                    state.last_door_type = Some(selected);
+                }
             }
             if ui.button(t!("props-edit-type")).clicked() {
                 state.dialogs.type_editor = Some(type_id);
@@ -1091,6 +1117,7 @@ pub fn options_bar(ui: &mut Ui, state: &mut AppState) {
                 if state.wall_top_level.is_none() {
                     ui.add(crate::properties::length_drag(&mut state.wall_height).speed(0.01).range(0.1..=50.0));
                 }
+                ui.label(theme::muted(t!("hint-wall-free-snap")));
                 ui.separator();
                 ui.label(t!("prop-location-line"));
                 let location = &mut state.wall_location_line;
@@ -1116,6 +1143,19 @@ pub fn options_bar(ui: &mut Ui, state: &mut AppState) {
                 ui.label(theme::muted(t!("hint-hosted")));
             }
             Tool::Sketch { category, type_id } => {
+                if category == Category::Mass {
+                    ui.label(t!("mass-use"));
+                    ui.selectable_value(&mut state.mass_visual_solid, false, t!("mass-mode-conceptual"));
+                    ui.selectable_value(&mut state.mass_visual_solid, true, t!("mass-mode-visual"));
+                    if state.mass_visual_solid {
+                        ui.label(t!("prop-height"));
+                        ui.add(
+                            crate::properties::length_drag(&mut state.mass_visual_height).speed(0.01).range(0.1..=50.0),
+                        );
+                    }
+                    ui.label(theme::muted(t!("hint-mass-visual-snap")));
+                    ui.separator();
+                }
                 let n = state.interaction.points.len();
                 if ui.add_enabled(n >= 3, Button::new(t!("sketch-finish"))).clicked()
                     && let Some(level) = state.active_level()

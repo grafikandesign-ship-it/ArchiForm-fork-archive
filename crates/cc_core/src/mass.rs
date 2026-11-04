@@ -26,6 +26,9 @@ pub struct Mass {
     /// Levels where mass floors are taken (those the mass spans).
     #[serde(default)]
     pub floors: Vec<LevelId>,
+    /// Render as an opaque visualization volume instead of a translucent conceptual mass.
+    #[serde(default)]
+    pub visual_solid: bool,
 }
 
 impl Mass {
@@ -50,6 +53,58 @@ impl Mass {
             Some(top) => crate::sweep::blend_section(&base, &crate::sweep::counter_clockwise(top), t.clamp(0.0, 1.0)),
         }
     }
+
+    /// The centerline and mean thickness when an extruded outline represents
+    /// a long, narrow wall volume. Returns `None` for building masses, lofts,
+    /// and outlines that are not sufficiently wall-like.
+    pub fn wall_volume_axis(&self) -> Option<WallVolumeAxis> {
+        if self.top.is_some() || self.outline.len() < 4 {
+            return None;
+        }
+        let center = self.outline.iter().copied().sum::<DVec2>() / self.outline.len() as f64;
+        let (xx, xy, yy) = self.outline.iter().fold((0.0, 0.0, 0.0), |(xx, xy, yy), p| {
+            let q = *p - center;
+            (xx + q.x * q.x, xy + q.x * q.y, yy + q.y * q.y)
+        });
+        let angle = 0.5 * (2.0 * xy).atan2(xx - yy);
+        let direction = DVec2::from_angle(angle);
+        let normal = direction.perp();
+        let (mut min_u, mut max_u, mut min_v, mut max_v) =
+            (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+        for p in &self.outline {
+            let q = *p - center;
+            let (u, v) = (q.dot(direction), q.dot(normal));
+            min_u = min_u.min(u);
+            max_u = max_u.max(u);
+            min_v = min_v.min(v);
+            max_v = max_v.max(v);
+        }
+        let length = max_u - min_u;
+        let thickness = area(&self.outline) / length;
+        if !length.is_finite()
+            || !thickness.is_finite()
+            || length < 1.2
+            || thickness < 0.05
+            || thickness > 0.6
+            || length / (max_v - min_v).max(1e-9) < 3.5
+        {
+            return None;
+        }
+        let mid_v = (min_v + max_v) * 0.5;
+        Some(WallVolumeAxis {
+            start: center + direction * min_u + normal * mid_v,
+            end: center + direction * max_u + normal * mid_v,
+            thickness,
+        })
+    }
+}
+
+/// A straight wall inferred from a narrow extruded mass outline.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WallVolumeAxis {
+    pub start: DVec2,
+    pub end: DVec2,
+    pub thickness: f64,
 }
 
 /// A mass floor: the outline of a mass at a level, its area and perimeter.
@@ -155,7 +210,14 @@ mod tests {
 
     #[test]
     fn sections_of_extrusions_and_lofts() {
-        let mut m = Mass { outline: rect(10.0, 6.0), base_offset: 0.0, height: 9.0, top: None, floors: Vec::new() };
+        let mut m = Mass {
+            outline: rect(10.0, 6.0),
+            base_offset: 0.0,
+            height: 9.0,
+            top: None,
+            floors: Vec::new(),
+            visual_solid: false,
+        };
         assert!(m.is_valid());
         assert!((area(&m.section(0.5)) - 60.0).abs() < 1e-9);
         // A loft from 10 x 6 to 4 x 6: halfway the section is 7 x 6.
@@ -176,7 +238,14 @@ mod tests {
 
     #[test]
     fn faces_push_and_pull() {
-        let m = Mass { outline: rect(10.0, 6.0), base_offset: 0.0, height: 9.0, top: None, floors: Vec::new() };
+        let m = Mass {
+            outline: rect(10.0, 6.0),
+            base_offset: 0.0,
+            height: 9.0,
+            top: None,
+            floors: Vec::new(),
+            visual_solid: false,
+        };
         assert_eq!(m.pushed(MassFace::Top, 3.0).map(|m| m.height), Some(12.0));
         let b = m.pushed(MassFace::Bottom, 1.0).unwrap();
         assert_eq!((b.base_offset, b.height), (-1.0, 10.0));

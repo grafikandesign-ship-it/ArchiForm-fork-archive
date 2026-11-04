@@ -37,6 +37,7 @@ pub enum PendingAction {
 
 #[derive(Default)]
 pub struct Dialogs {
+    pub door_editor: Option<crate::door_editor::Editor>,
     pub wall_editor: Option<crate::wall_editor::WallEditor>,
     pub reference_import: Option<ReferenceImportDialog>,
     pub references: bool,
@@ -153,6 +154,10 @@ pub struct AppState {
     pub typed: crate::tools::TypedInput,
     /// Default height for new walls.
     pub wall_height: f64,
+    /// Draw conceptual masses translucently (false) or as solid render volumes (true).
+    pub mass_visual_solid: bool,
+    /// Default extrusion height for visualization volumes.
+    pub mass_visual_height: f64,
     /// Location line for new walls.
     pub wall_location_line: cc_core::LocationLine,
     /// Plan layout for new stairs (shape, turn, landing, winders, radius).
@@ -165,6 +170,9 @@ pub struct AppState {
     pub wall_top_level: Option<LevelId>,
     /// Show the wall type catalog instead of the project browser while drawing walls.
     pub wall_catalog_visible: bool,
+    pub door_catalog_visible: bool,
+    /// Last door type chosen in the catalog or from a placed door.
+    pub last_door_type: Option<ElementTypeId>,
     /// Allow the window to close after the user confirmed.
     pub quit_confirmed: bool,
     /// egui textures of closed 3D views, freed by the app when the GPU is available.
@@ -235,12 +243,16 @@ impl AppState {
             key_buffer: String::new(),
             typed: Default::default(),
             wall_height: 3.0,
+            mass_visual_solid: false,
+            mass_visual_height: 3.0,
             wall_location_line: Default::default(),
             stair_layout: Default::default(),
             ramp_layout: Default::default(),
             wall_arc: false,
             wall_top_level: None,
             wall_catalog_visible: false,
+            door_catalog_visible: false,
+            last_door_type: None,
             quit_confirmed: false,
             textures_to_free: Vec::new(),
             generation: 0,
@@ -359,6 +371,10 @@ impl AppState {
 
     pub fn set_tool(&mut self, tool: Tool) {
         self.wall_catalog_visible = matches!(tool, Tool::Wall { .. });
+        self.door_catalog_visible = matches!(tool, Tool::Hosted { category: cc_core::Category::Door, .. });
+        if let Tool::Hosted { category: cc_core::Category::Door, type_id } = &tool {
+            self.last_door_type = Some(*type_id);
+        }
         self.tool = tool;
         self.interaction = Interaction::default();
         self.typed.clear();

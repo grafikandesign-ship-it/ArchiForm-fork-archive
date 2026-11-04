@@ -467,9 +467,43 @@ pub(crate) fn snap_at(
     scale: f64,
     ortho: bool,
 ) -> Snap {
+    snap_at_mode(state, level, raw, anchor, extra, scale, ortho, true, false)
+}
+
+/// Snap an outline continuously for a visualization volume: retain real model
+/// and CAD references, but do not round angles or free coordinates to a grid.
+fn snap_at_free(
+    state: &mut AppState,
+    level: Option<LevelId>,
+    raw: DVec2,
+    anchor: Option<DVec2>,
+    extra: &[DVec2],
+    scale: f64,
+    ortho: bool,
+    bypass: bool,
+) -> Snap {
+    snap_at_mode(state, level, raw, anchor, extra, scale, ortho, false, bypass)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn snap_at_mode(
+    state: &mut AppState,
+    level: Option<LevelId>,
+    raw: DVec2,
+    anchor: Option<DVec2>,
+    extra: &[DVec2],
+    scale: f64,
+    ortho: bool,
+    quantize: bool,
+    bypass: bool,
+) -> Snap {
+    if bypass {
+        return Snap::at(raw, SnapKind::Free);
+    }
     let cad = cad_snap(state, raw, SNAP_PX / scale * 1.5);
     let (project, geom) = (&state.session.doc.project, state.session.geom());
-    let s = snap_with(project, geom, level, raw, anchor, extra, &state.interaction.tracked, scale, ortho, &cad);
+    let s =
+        snap_with(project, geom, level, raw, anchor, extra, &state.interaction.tracked, scale, ortho, &cad, quantize);
     if matches!(s.kind, SnapKind::Endpoint | SnapKind::Midpoint | SnapKind::Center) {
         let tracked = &mut state.interaction.tracked;
         tracked.retain(|p| p.distance(s.point) > 1e-9);
@@ -552,7 +586,7 @@ fn snap(
     ortho: bool,
 ) -> Snap {
     let cad = cc_core::cad::CadSnap::default();
-    snap_with(project, geom, level, raw, anchor, extra, tracked, scale, ortho, &cad)
+    snap_with(project, geom, level, raw, anchor, extra, tracked, scale, ortho, &cad, true)
 }
 
 /// [`snap`] with the snap features of imported drawings too (their
@@ -569,6 +603,7 @@ fn snap_with(
     scale: f64,
     ortho: bool,
     cad: &cc_core::cad::CadSnap,
+    quantize: bool,
 ) -> Snap {
     let r = SNAP_PX / scale;
     let mut ends: Vec<DVec2> = extra.to_vec();
@@ -696,17 +731,16 @@ fn snap_with(
         return s;
     }
 
-    let step = round_step(scale);
     if let Some(a) = anchor {
         let v = raw - a;
         let mut dir = v.normalize_or_zero();
-        let ang = v.y.atan2(v.x).to_degrees();
-        let snapped = (ang / 15.0).round() * 15.0;
-        if (ang - snapped).abs() < 3.0 {
-            dir = DVec2::from_angle(snapped.to_radians());
+        if quantize {
+            let ang = v.y.atan2(v.x).to_degrees();
+            let snapped = (ang / 15.0).round() * 15.0;
+            if (ang - snapped).abs() < 3.0 {
+                dir = DVec2::from_angle(snapped.to_radians());
+            }
         }
-        let len = (v.dot(dir) / step).round() * step;
-        let p = a + dir * len;
         // Prefer landing exactly on a wall line when close (T-junctions).
         if let Some(q) = on_lines(&lines, raw, r) {
             return Snap::at(q, SnapKind::Nearest);
@@ -729,16 +763,31 @@ fn snap_with(
         if let Some((q, g)) = aligned {
             return Snap { point: q, kind: SnapKind::Alignment, guides: [Some((g.0, q)), None] };
         }
+        if !quantize {
+            return Snap::at(raw, SnapKind::Free);
+        }
+        let step = round_step(scale);
+        let len = (v.dot(dir) / step).round() * step;
+        let p = a + dir * len;
         return Snap::at(p, SnapKind::Free);
     }
     if let Some(q) = on_lines(&lines, raw, r) {
         return Snap::at(q, SnapKind::Nearest);
     }
     if let Some(g) = guides.iter().min_by(|x, y| off(x, raw).total_cmp(&off(y, raw))) {
+        if !quantize {
+            let q = g.0 + g.1 * (raw - g.0).dot(g.1);
+            return Snap { point: q, kind: SnapKind::Alignment, guides: [Some((g.0, q)), None] };
+        }
+        let step = round_step(scale);
         let t = ((raw - g.0).dot(g.1) / step).round() * step;
         let q = g.0 + g.1 * t;
         return Snap { point: q, kind: SnapKind::Alignment, guides: [Some((g.0, q)), None] };
     }
+    if !quantize {
+        return Snap::at(raw, SnapKind::Free);
+    }
+    let step = round_step(scale);
     Snap::at((raw / step).round() * step, SnapKind::Free)
 }
 
@@ -1082,7 +1131,7 @@ pub fn handle(
         }
         (Tool::Section, level) => section_tool(ui, resp, painter, state, level, xf),
         (Tool::Opening { host, .. }, Some(level)) => {
-            if let Some(pts) = sketch_input(ui, resp, painter, state, level, xf) {
+            if let Some(pts) = sketch_input(ui, resp, painter, state, level, xf, false) {
                 add_opening(state, *host, pts);
             }
         }
@@ -2301,7 +2350,7 @@ fn wall_tool(
     let Some(raw) = resp.hover_pos().map(|p| xf.to_world(p)) else { return };
     let shift = ui.input(|i| i.modifiers.shift);
     let anchor = state.interaction.anchor;
-    let s = snap_at(state, Some(level), raw, anchor, &[], xf.scale, shift);
+    let s = snap_at_free(state, Some(level), raw, anchor, &[], xf.scale, shift, ui.input(|i| i.modifiers.alt));
     let mut p = s.point;
     draw_snap(painter, xf, s);
 
@@ -2466,6 +2515,35 @@ fn wall_under(
         .map(|(id, u, v, _)| (id, u, v))
 }
 
+/// A narrow mass wall volume under the cursor, if it can be converted to a
+/// straight BIM wall. `slack` permits clicking on the imported drawing line
+/// beside the volume.
+fn wall_mass_under(project: &Project, level: LevelId, raw: DVec2, slack: f64) -> Option<ElementId> {
+    project
+        .elements
+        .values()
+        .filter(|e| e.level == level)
+        .filter_map(|e| {
+            let ElementKind::Mass(mass) = &e.kind else { return None };
+            mass.wall_volume_axis()?;
+            let inside = cc_geom::polygon::contains(&mass.outline, raw);
+            let distance = if inside {
+                0.0
+            } else {
+                (0..mass.outline.len())
+                    .filter_map(|i| {
+                        let a = *mass.outline.get(i)?;
+                        let b = *mass.outline.get((i + 1) % mass.outline.len())?;
+                        Some(cc_geom::polygon::closest_on_segment(a, b, raw).0.distance(raw))
+                    })
+                    .min_by(f64::total_cmp)?
+            };
+            (distance <= slack).then_some((e.id, distance, cc_core::mass::area(&mass.outline)))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.2.total_cmp(&b.2)))
+        .map(|(id, _, _)| id)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn hosted_tool(
     ui: &Ui,
@@ -2483,14 +2561,50 @@ fn hosted_tool(
         state.interaction.cycle_hosted_orientation(category);
     }
     let Some(raw) = resp.hover_pos().map(|p| xf.to_world(p)) else { return };
-    let project = &state.session.doc.project;
-    let Some(ty) = project.element_type(type_id) else { return };
-    let Some((width, _)) = ty.opening_size() else { return };
-    let sill = ty.default_sill();
-    let Some((host, u, v)) = wall_under(project, state.session.geom(), level, raw, 12.0 / xf.scale) else {
-        painter.circle_stroke(xf.to_screen(raw), 4.0, Stroke::new(1.0, Color32::GRAY));
-        return;
+    let Some((width, sill)) = state.project().element_type(type_id).and_then(|ty| ty.opening_size()) else { return };
+    let slack = 12.0 / xf.scale;
+    let mass_under = wall_mass_under(state.project(), level, raw, slack);
+    let mass_on_pointer = mass_under.filter(|id| {
+        matches!(state.project().element(*id).map(|e| &e.kind), Some(ElementKind::Mass(mass)) if cc_geom::polygon::contains(&mass.outline, raw))
+    });
+    // If the cursor is inside a wall-shaped mass, prefer that explicit volume
+    // over an unrelated BIM wall that may be close to the imported drawing.
+    let mut hit = if mass_on_pointer.is_some() {
+        None
+    } else {
+        wall_under(state.project(), state.session.geom(), level, raw, slack)
     };
+    if hit.is_none() {
+        let Some(mass_id) = mass_on_pointer.or(mass_under) else {
+            painter.circle_stroke(xf.to_screen(raw), 4.0, Stroke::new(1.0, Color32::GRAY));
+            return;
+        };
+        if !resp.clicked() {
+            if let Some(ElementKind::Mass(mass)) = state.project().element(mass_id).map(|e| &e.kind) {
+                let outline: Vec<Pos2> = mass.outline.iter().map(|p| xf.to_screen(*p)).collect();
+                painter.add(egui::Shape::closed_line(outline, Stroke::new(1.8, PREVIEW)));
+            }
+            label(painter, xf.to_screen(raw), t!("hint-door-mass-convert"));
+            return;
+        }
+        if let Some(out) = crate::actions::run_command(
+            state,
+            cc_engine::commands::mass::MassWallConvert { id: mass_id.0, type_ref: None },
+        ) {
+            hit = out["id"].as_u64().map(ElementId).and_then(|host| {
+                state.session.geom();
+                state.session.geom().walls.get(&host).and_then(|g| {
+                    let (u, v) = g.local(raw);
+                    (u >= 0.0 && u <= g.length && v.abs() <= g.half + slack).then_some((host, u, v))
+                })
+            });
+        }
+        if hit.is_none() {
+            state.message = t!("msg-mass-wall-converted");
+            return;
+        }
+    }
+    let Some((host, u, v)) = hit else { return };
     let g = &state.session.geom().walls[&host];
     let Some(offset) = opening_offset(g, width, u) else {
         label(painter, xf.to_screen(raw), t!("msg-wall-too-short"));
@@ -2586,7 +2700,7 @@ fn sketch_tool(
     type_id: ElementTypeId,
     xf: &Xf,
 ) {
-    if let Some(pts) = sketch_input(ui, resp, painter, state, level, xf) {
+    if let Some(pts) = sketch_input(ui, resp, painter, state, level, xf, category == Category::Mass) {
         finish_sketch(state, level, category, type_id, pts);
     }
 }
@@ -2626,6 +2740,7 @@ fn sketch_input(
     state: &mut AppState,
     level: LevelId,
     xf: &Xf,
+    free_angles: bool,
 ) -> Option<Vec<DVec2>> {
     if ui.input(|i| i.key_pressed(Key::Backspace)) && state.typed.is_empty() {
         state.interaction.points.pop();
@@ -2639,7 +2754,20 @@ fn sketch_input(
     let mut point = None;
     if let Some(raw) = resp.hover_pos().map(|p| xf.to_world(p)) {
         let shift = ui.input(|i| i.modifiers.shift);
-        let s = snap_at(state, Some(level), raw, pts.last().copied(), &pts, xf.scale, shift);
+        let s = if free_angles {
+            snap_at_free(
+                state,
+                Some(level),
+                raw,
+                pts.last().copied(),
+                &pts,
+                xf.scale,
+                shift,
+                ui.input(|i| i.modifiers.alt),
+            )
+        } else {
+            snap_at(state, Some(level), raw, pts.last().copied(), &pts, xf.scale, shift)
+        };
         draw_snap(painter, xf, s);
         if let Some(last) = pts.last() {
             painter.line_segment([xf.to_screen(*last), xf.to_screen(s.point)], Stroke::new(1.0, PREVIEW));
@@ -2698,6 +2826,8 @@ pub fn finish_sketch(
                 outline: pts.iter().map(|p| p.to_array()).collect(),
                 level: Some(Ref::Id(level.0)),
                 type_ref: Some(Ref::Id(type_id.0)),
+                height: state.mass_visual_solid.then_some(state.mass_visual_height),
+                visual_solid: state.mass_visual_solid,
                 ..Default::default()
             },
         ),
@@ -2768,10 +2898,20 @@ fn select(
 
     if resp.secondary_clicked()
         && let Some(hit) = raw.and_then(|p| drawing.hit_test_line(p, tol).or_else(|| drawing.hit_test(p, tol)))
-        && state.project().element(hit).is_some_and(|e| e.as_wall().is_some())
+        && let Some((is_wall, is_door, type_id)) = state
+            .project()
+            .element(hit)
+            .map(|e| (e.as_wall().is_some(), matches!(&e.kind, ElementKind::Door(_)), e.type_id))
     {
-        crate::wall_editor::open(state, hit);
-        return;
+        if is_wall || is_door {
+            state.selection = BTreeSet::from([hit]);
+            if is_wall {
+                crate::wall_editor::open(state, hit);
+            } else {
+                crate::door_editor::open_type(state, type_id);
+            }
+            return;
+        }
     }
 
     // Pre-selection highlight.

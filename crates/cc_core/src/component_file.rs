@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 /// Current `.ccomp` format version.
-pub const COMPONENT_FORMAT_VERSION: u32 = 1;
+pub const COMPONENT_FORMAT_VERSION: u32 = 2;
 
 /// Limits that keep a hostile file from exhausting memory or time.
 const MAX_PARAMS: usize = 256;
@@ -127,8 +127,13 @@ fn validate(file: &ComponentFile) -> Result<(), ComponentFileError> {
         if item.shape.point_count() > MAX_POINTS {
             return bad("too many profile points");
         }
-        if let crate::ComponentShape::Mesh { vertices, faces } = &item.shape
-            && (vertices.len() > MAX_MESH_VERTICES || faces.iter().map(Vec::len).sum::<usize>() > 4 * MAX_MESH_VERTICES)
+        let mesh_size = match &item.shape {
+            crate::ComponentShape::Mesh { vertices, faces }
+            | crate::ComponentShape::ParametricMesh { vertices, faces, .. } => Some((vertices.len(), faces)),
+            _ => None,
+        };
+        if let Some((vertices, faces)) = mesh_size
+            && (vertices > MAX_MESH_VERTICES || faces.iter().map(Vec::len).sum::<usize>() > 4 * MAX_MESH_VERTICES)
         {
             return bad("mesh too large");
         }

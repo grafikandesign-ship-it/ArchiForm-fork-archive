@@ -36,6 +36,9 @@ pub struct MassCreate {
     /// Offset of the base from the level elevation, meters (default 0).
     #[serde(default)]
     pub base_offset: Option<f64>,
+    /// Render the extrusion as an opaque visualization volume rather than a translucent conceptual mass (default false).
+    #[serde(default)]
+    pub visual_solid: bool,
     /// Top outline of a loft `[[x, y], …]` (default: the base outline, an extrusion).
     #[serde(default)]
     pub top: Option<Vec<Point>>,
@@ -123,7 +126,7 @@ impl Command for MassCreate {
             (None, None) => None,
             (r, _) => Some(refs::type_of(p, Category::Mass, r.as_ref())?),
         };
-        let mass = Mass { outline: base, base_offset, height, top, floors };
+        let mass = Mass { outline: base, base_offset, height, top, floors, visual_solid: self.visual_solid };
         let id = edit(s, t!("tx-create-mass"), |e| {
             let type_id = match ty {
                 Some(t) => t,
@@ -333,6 +336,9 @@ pub struct MassWallsCreate {
     /// Edges of the base outline to put walls on (default: every edge).
     #[serde(default)]
     pub sides: Option<Vec<usize>>,
+    /// Replace the source mass with the created walls in the same undoable edit (default false).
+    #[serde(default)]
+    pub replace_mass: bool,
 }
 
 impl Command for MassWallsCreate {
@@ -369,10 +375,65 @@ impl Command for MassWallsCreate {
             })
             .collect();
         let level = e.level;
+        let mass_id = e.id;
+        let replace_mass = self.replace_mass;
         let created = edit(s, t!("tx-mass-walls"), |e| {
-            Ok(walls.into_iter().map(|w| add_element(e, level, type_id, ElementKind::Wall(w))).collect::<Vec<_>>())
+            let created: Vec<ElementId> =
+                walls.into_iter().map(|w| add_element(e, level, type_id, ElementKind::Wall(w))).collect();
+            if replace_mass {
+                e.remove_element(mass_id);
+            }
+            Ok(created)
         })?;
         Ok(json!({ "created": ids(&created) }))
+    }
+}
+
+/// Replace a long, narrow mass wall volume with one BIM wall on its inferred
+/// centerline, preserving the mass height and choosing the closest wall type.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MassWallConvert {
+    /// Mass element id.
+    pub id: u64,
+    /// Wall type id or name (default: closest thickness to the mass volume).
+    #[serde(default, rename = "type")]
+    pub type_ref: Option<Ref>,
+}
+
+impl Command for MassWallConvert {
+    const NAME: &'static str = "mass_wall_convert";
+    const KIND: CommandKind = CommandKind::Edit;
+    fn run(self, s: &mut Session) -> Result<Value> {
+        let p = s.project();
+        let (element, mass) = mass_of(p, self.id)?;
+        let axis = mass.wall_volume_axis().ok_or_else(|| EngineError::rejected(t!("msg-mass-not-wall")))?;
+        let type_id = match self.type_ref.as_ref() {
+            Some(reference) => refs::type_of(p, Category::Wall, Some(reference))?,
+            None => p
+                .types_of(Category::Wall)
+                .min_by(|a, b| {
+                    (a.thickness() - axis.thickness).abs().total_cmp(&(b.thickness() - axis.thickness).abs())
+                })
+                .map(|ty| ty.id)
+                .ok_or_else(|| EngineError::not_found("no wall type is available"))?,
+        };
+        let wall = cc_core::Wall {
+            start: axis.start,
+            end: axis.end,
+            base_offset: mass.base_offset,
+            height: mass.height,
+            location_line: cc_core::LocationLine::Centerline,
+            ..Default::default()
+        };
+        let level = element.level;
+        let mass_id = element.id;
+        let wall_id = edit(s, t!("tx-mass-wall-convert"), |e| {
+            let wall_id = add_element(e, level, type_id, ElementKind::Wall(wall));
+            e.remove_element(mass_id);
+            Ok(wall_id)
+        })?;
+        Ok(created(s, wall_id))
     }
 }
 

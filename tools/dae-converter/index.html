@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>ArchiForm · Convertitore DAE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-mark">A</div>
+    <div><strong>ArchiForm</strong><span>Convertitore DAE · componente parametrico</span></div>
+    <label class="open-button" for="dae-file">Apri modello DAE</label>
+    <input id="dae-file" type="file" accept=".dae,model/vnd.collada+xml,application/xml,text/xml">
+  </header>
+  <main>
+    <section class="workspace">
+      <div class="viewport" id="viewport">
+        <canvas id="preview" aria-label="Anteprima 3D ruotabile"></canvas>
+        <div class="empty" id="empty"><b>Importa il file DAE</b><span>Il modello resta nel browser e non viene caricato online.</span></div>
+        <div class="drop-overlay" id="drop-overlay">Rilascia qui il file .dae</div>
+        <div class="view-controls"><button id="reset-view" title="Ripristina vista">⟲</button><span>Trascina per ruotare · rotella per zoom</span></div>
+      </div>
+      <aside class="tree-panel">
+        <div class="panel-title"><span>Struttura DAE</span><span class="counter" id="part-count">0</span></div>
+        <div class="file-name" id="file-name">Nessun file caricato</div>
+        <div id="groups" class="groups"><p class="muted">I gruppi nominati compariranno qui.</p></div>
+        <div class="resource-card"><strong>Materiali e texture</strong><div id="resources" class="muted">In attesa del file DAE</div></div>
+      </aside>
+    </section>
+    <section class="editor">
+      <div class="editor-head">
+        <div><span class="eyebrow">Conversione guidata</span><h1>Da geometria a regole parametriche</h1></div>
+        <span class="offline-badge">● Elaborazione locale</span>
+      </div>
+      <div class="editor-grid">
+        <div class="card parameters">
+          <h2>Parametri principali</h2>
+          <label>Nome del componente<input id="component-name" value="Porta Climb Noa"></label>
+          <div class="dimensions">
+            <label>Larghezza (m)<input id="width" type="number" min="0.1" step="0.001" value="1.024"></label>
+            <label>Altezza (m)<input id="height" type="number" min="0.1" step="0.001" value="2.257"></label>
+            <label>Profondità (m)<input id="depth" type="number" min="0.01" step="0.001" value="0.150"></label>
+          </div>
+          <p class="hint">Le mesh triangolate originali vengono mantenute. Larghezza, altezza e profondità ridimensionano tutte le parti dal centro dell'apertura e dal pavimento.</p>
+          <button class="primary" id="export" disabled>Esporta componente .ccomp</button>
+          <p class="status" id="status">Carica un DAE per iniziare.</p>
+        </div>
+        <div class="card method">
+          <h2>Regole di conversione</h2>
+          <ol>
+            <li><b>Gruppi nominati</b><span>Ogni nodo DAE diventa una parte distinta, mantenendo il suo nome.</span></li>
+            <li><b>Parametri condivisi</b><span>Larghezza, altezza e profondità regolano tutte le parti.</span></li>
+            <li><b>Geometria conservata</b><span>Le facce triangolate originali restano suddivise per gruppo e si ridimensionano con i parametri.</span></li>
+          </ol>
+          <div class="notice"><b>Limite della conversione</b><p>La geometria triangolata del DAE viene conservata, ma non sono ancora trasferite le texture, le regole dei materiali o il riconoscimento parametrico di ferramenta e dettagli. Ridimensionando il modello, le forme vengono scalate in proporzione sui tre assi.</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

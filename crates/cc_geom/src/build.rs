@@ -407,8 +407,10 @@ impl ModelGeometry {
             let Some(g) = crate::mass::mass_geom(project, e, m) else { continue };
             let material = project.element_type(e.type_id).map_or("", |t| t.main_material());
             let mut s = Solid::of_material(e.id, e.category(), project, material);
-            // Masses are studied through: at least partly transparent.
-            s.transparency = s.transparency.max(0.4);
+            // Conceptual masses are studied through; visualization volumes are opaque.
+            if !m.visual_solid {
+                s.transparency = s.transparency.max(0.4);
+            }
             s.add_polygons(g.faces.clone());
             self.solids.push(s);
             self.masses.insert(e.id, g);

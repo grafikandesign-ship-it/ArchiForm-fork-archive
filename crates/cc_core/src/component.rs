@@ -128,6 +128,10 @@ pub enum ComponentShape {
     /// Fixed polyhedral surface (not parametric): vertices in the component
     /// frame and faces as counter-clockwise (seen from outside) index loops.
     Mesh { vertices: Vec<[f64; 3]>, faces: Vec<Vec<u32>> },
+    /// Imported polyhedral geometry scaled by expressions along the component
+    /// axes. Vertices are stored around the component origin, so the scales
+    /// resize the detailed mesh without replacing it with proxy solids.
+    ParametricMesh { vertices: Vec<[f64; 3]>, faces: Vec<Vec<u32>>, scale_x: String, scale_y: String, scale_z: String },
 }
 
 impl ComponentShape {
@@ -173,6 +177,9 @@ impl ComponentShape {
                 out.push(("depth", depth));
                 out
             }
+            ComponentShape::ParametricMesh { scale_x, scale_y, scale_z, .. } => {
+                vec![("scale_x", scale_x), ("scale_y", scale_y), ("scale_z", scale_z)]
+            }
             ComponentShape::Mesh { .. } => Vec::new(),
         }
     }
@@ -209,6 +216,9 @@ impl ComponentShape {
                 out.extend(profile_expressions_mut(top));
                 out.extend([offset, depth]);
                 out
+            }
+            ComponentShape::ParametricMesh { scale_x, scale_y, scale_z, .. } => {
+                vec![scale_x, scale_y, scale_z]
             }
             ComponentShape::Mesh { .. } => Vec::new(),
         }
@@ -566,6 +576,9 @@ impl ComponentDef {
         for (i, item) in self.items.iter().enumerate() {
             let resolved = match &item.shape {
                 ComponentShape::Mesh { vertices, faces } => resolve_mesh(vertices, faces),
+                ComponentShape::ParametricMesh { vertices, faces, scale_x, scale_y, scale_z } => {
+                    resolve_parametric_mesh(vertices, faces, scale_x, scale_y, scale_z, &lookup)
+                }
                 ComponentShape::Profile { .. }
                 | ComponentShape::Revolution { .. }
                 | ComponentShape::Sweep { .. }
@@ -755,6 +768,24 @@ fn resolve_mesh(vertices: &[[f64; 3]], faces: &[Vec<u32>]) -> Result<ResolvedMes
     Ok((footprint, z0, z1, faces))
 }
 
+fn resolve_parametric_mesh(
+    vertices: &[[f64; 3]],
+    faces: &[Vec<u32>],
+    scale_x: &str,
+    scale_y: &str,
+    scale_z: &str,
+    lookup: &dyn Fn(&str) -> Option<f64>,
+) -> Result<ResolvedMesh, PartError> {
+    let eval_scale = |field, expression| {
+        let value = expr::eval(expression, lookup).map_err(|error| PartError::Expr { field, error })?;
+        if value.is_finite() && value > 1e-6 { Ok(value) } else { Err(PartError::Degenerate) }
+    };
+    let (sx, sy, sz) =
+        (eval_scale("scale_x", scale_x)?, eval_scale("scale_y", scale_y)?, eval_scale("scale_z", scale_z)?);
+    let scaled: Vec<[f64; 3]> = vertices.iter().map(|[x, y, z]| [x * sx, y * sy, z * sz]).collect();
+    resolve_mesh(&scaled, faces)
+}
+
 /// Convex hull of plan points (counter-clockwise; fewer than 3 points when degenerate).
 pub fn convex_hull(points: &[DVec2]) -> Vec<DVec2> {
     let mut pts: Vec<DVec2> = points.iter().copied().filter(|p| p.is_finite()).collect();
@@ -824,6 +855,7 @@ fn resolve_shape(
             Ok((footprint, z, z + h))
         }
         ComponentShape::Mesh { .. }
+        | ComponentShape::ParametricMesh { .. }
         | ComponentShape::Profile { .. }
         | ComponentShape::Revolution { .. }
         | ComponentShape::Sweep { .. }

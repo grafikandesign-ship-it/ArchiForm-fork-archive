@@ -129,12 +129,6 @@ fn main_body(ui: &mut Ui, state: &AppState, editor: &mut WallEditor) {
             left.add_space(8.0);
             left.label(RichText::new(t!("comp-preview")).strong());
             paint_preview(left, state, editor.ty.layers(), 145.0);
-            left.horizontal(|ui| {
-                ui.label(theme::muted(t!("wall-editor-exterior")).size(11.0));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(theme::muted(t!("wall-editor-interior")).size(11.0));
-                });
-            });
 
             let right = &mut columns[1];
             right.label(RichText::new(t!("section-construction")).strong());
@@ -275,10 +269,10 @@ pub(crate) fn paint_preview(ui: &mut Ui, state: &AppState, layers: &[Layer], hei
         return;
     }
     let area = rect.shrink2(vec2(18.0, 32.0));
-    let mut x = area.left();
+    let mut y = area.top();
     for layer in layers {
-        let w = area.width() * (layer.thickness.max(0.0) / total) as f32;
-        let r = egui::Rect::from_min_max(Pos2::new(x, area.top()), Pos2::new(x + w, area.bottom()));
+        let h = area.height() * (layer.thickness.max(0.0) / total) as f32;
+        let r = egui::Rect::from_min_max(Pos2::new(area.left(), y), Pos2::new(area.right(), y + h));
         let color = state
             .project()
             .material(&layer.material)
@@ -290,27 +284,34 @@ pub(crate) fn paint_preview(ui: &mut Ui, state: &AppState, layers: &[Layer], hei
         p.rect_filled(r, 0.0, color);
         p.rect_stroke(r, 0.0, Stroke::new(1.0, PALETTE.text_muted), egui::StrokeKind::Inside);
         // The cut pattern remains legible even if a material's 3D color is dark.
-        let mut hatch = x + 9.0;
-        while hatch < x + w {
+        let mut hatch = area.left() + 9.0;
+        while hatch < area.right() {
             p.line_segment(
-                [Pos2::new(hatch, area.top()), Pos2::new((hatch - 18.0).max(x), area.bottom())],
+                [Pos2::new(hatch, y), Pos2::new((hatch - h).max(area.left()), y + h)],
                 Stroke::new(0.7, Color32::from_black_alpha(75)),
             );
             hatch += 12.0;
         }
-        x += w;
+        y += h;
     }
     p.text(
         rect.center_top() + vec2(0.0, 7.0),
         egui::Align2::CENTER_TOP,
-        cc_views::format::length(total),
+        t!("wall-editor-exterior"),
         egui::FontId::proportional(12.0),
         PALETTE.text,
     );
     p.text(
+        rect.right_top() + vec2(-8.0, 7.0),
+        egui::Align2::RIGHT_TOP,
+        cc_views::format::length(total),
+        egui::FontId::proportional(11.0),
+        PALETTE.text_muted,
+    );
+    p.text(
         rect.center_bottom() - vec2(0.0, 7.0),
         egui::Align2::CENTER_BOTTOM,
-        t!("wall-editor-exterior"),
+        t!("wall-editor-interior"),
         egui::FontId::proportional(10.0),
         PALETTE.text_muted,
     );

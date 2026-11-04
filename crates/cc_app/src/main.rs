@@ -16,6 +16,8 @@ mod component_sketch;
 mod dialog;
 mod dialogs;
 mod dim_edit;
+mod door_catalog;
+mod door_editor;
 mod engine_edit;
 mod gpu;
 mod graphics_dialog;

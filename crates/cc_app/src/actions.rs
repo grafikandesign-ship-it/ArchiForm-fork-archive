@@ -158,7 +158,14 @@ pub fn activate_category_tool(state: &mut AppState, category: Category) {
         run_command(state, cc_engine::commands::mass::MassTypeCreate::default());
     }
     match Tool::for_category(state.project(), category) {
-        Some(tool) => {
+        Some(mut tool) => {
+            if category == Category::Door
+                && let Some(id) = state
+                    .last_door_type
+                    .filter(|id| state.project().element_type(*id).is_some_and(|ty| ty.category() == Category::Door))
+            {
+                tool = tool.with_type(id);
+            }
             // Doors and windows also go on walls clicked in a 3D view.
             let in_3d = matches!(tool, Tool::Hosted { .. })
                 && state
@@ -988,11 +995,28 @@ pub fn selected_masses(state: &AppState) -> Vec<ElementId> {
 /// Walls (`walls`), floors (`slabs`) or roofs (`roof`) from each selected
 /// mass; what they make is selected.
 pub fn from_masses(state: &mut AppState, what: &str) {
-    use cc_engine::commands::mass::{MassRoofCreate, MassSlabsCreate, MassWallsCreate};
+    use cc_engine::commands::mass::{MassRoofCreate, MassSlabsCreate, MassWallConvert, MassWallsCreate};
     let mut made = Vec::new();
     for id in selected_masses(state) {
         let out = match what {
-            "walls" => run_command(state, MassWallsCreate { id: id.0, type_ref: None, sides: None }),
+            "walls" => {
+                run_command(state, MassWallsCreate { id: id.0, type_ref: None, sides: None, replace_mass: false })
+            }
+            "replace-walls" => {
+                let is_wall_volume = state
+                    .project()
+                    .element(id)
+                    .and_then(|e| match &e.kind {
+                        cc_core::ElementKind::Mass(mass) => mass.wall_volume_axis(),
+                        _ => None,
+                    })
+                    .is_some();
+                if is_wall_volume {
+                    run_command(state, MassWallConvert { id: id.0, type_ref: None })
+                } else {
+                    run_command(state, MassWallsCreate { id: id.0, type_ref: None, sides: None, replace_mass: true })
+                }
+            }
             "slabs" => run_command(state, MassSlabsCreate { id: id.0, type_ref: None, levels: None }),
             _ => run_command(state, MassRoofCreate { id: id.0, type_ref: None, overhang: None }),
         };
