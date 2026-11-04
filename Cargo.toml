@@ -7,7 +7,7 @@ version = "0.8.4"
 edition = "2024"
 license = "GPL-3.0-or-later"
 authors = ["Francis Rebouças <francisreboucas@gmail.com>"]
-repository = "https://github.com/grafikandesign-ship-it/constructcad"
+repository = "https://github.com/grafikandesign-ship-it/ArchiForm"
 
 [workspace.dependencies]
 cc_core = { path = "crates/cc_core" }

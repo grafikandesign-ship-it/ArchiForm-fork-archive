@@ -17,9 +17,9 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
 /// The GitHub API endpoint of the latest (non-draft, non-prerelease) release.
-pub const RELEASES_API: &str = "https://api.github.com/repos/grafikandesign-ship-it/constructcad/releases/latest";
+pub const RELEASES_API: &str = "https://api.github.com/repos/grafikandesign-ship-it/ArchiForm/releases/latest";
 /// Release pages; the tag is appended.
-const RELEASE_PAGE: &str = "https://github.com/grafikandesign-ship-it/constructcad/releases/tag/";
+const RELEASE_PAGE: &str = "https://github.com/grafikandesign-ship-it/ArchiForm/releases/tag/";
 /// Set (to anything but `0` or nothing) to turn every update check off.
 pub const NO_CHECK_ENV: &str = "CONSTRUCTCAD_NO_UPDATE_CHECK";
 /// Time between automatic checks.
@@ -419,7 +419,7 @@ mod tests {
             evaluate(now, &json("v0.4.0")),
             Outcome::Available(Release {
                 version: v(0, 4, 0),
-                url: "https://github.com/grafikandesign-ship-it/constructcad/releases/tag/v0.4.0".into(),
+                url: "https://github.com/grafikandesign-ship-it/ArchiForm/releases/tag/v0.4.0".into(),
                 assets: Vec::new(),
             })
         );

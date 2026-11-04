@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 /// Packages and the checksum list must come from this repository's releases.
-pub const DOWNLOAD_PREFIX: &str = "https://github.com/grafikandesign-ship-it/constructcad/releases/download/";
+pub const DOWNLOAD_PREFIX: &str = "https://github.com/grafikandesign-ship-it/ArchiForm/releases/download/";
 /// The checksum list every release carries.
 pub const SUMS: &str = "SHA256SUMS.txt";
 /// No package is bigger than this (they are tens of megabytes).

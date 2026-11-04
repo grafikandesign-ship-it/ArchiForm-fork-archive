@@ -19,7 +19,7 @@ packaging/linux/install-tree.sh "$bin_dir" "$pkg"
 cat > "$pkg/usr/share/doc/archiform/copyright" <<'EOF'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: ArchiForm
-Source: https://github.com/grafikandesign-ship-it/constructcad
+Source: https://github.com/grafikandesign-ship-it/ArchiForm
 
 Files: *
 Copyright: Francis Rebouças, the ConstructCAD contributors, and the ArchiForm contributors
@@ -51,7 +51,7 @@ Maintainer: ArchiForm contributors <grafikandesign-ship-it@users.noreply.github.
 Installed-Size: $installed_size
 Depends: $shlibs, libxkbcommon0, libvulkan1 | libegl1
 Recommends: libxkbcommon-x11-0, libx11-6, libxcursor1, libxi6, libxrandr2, libwayland-client0, xdg-desktop-portal
-Homepage: https://github.com/grafikandesign-ship-it/constructcad
+Homepage: https://github.com/grafikandesign-ship-it/ArchiForm
 Description: Free and open source BIM authoring
  ArchiForm models buildings with walls, floors, roofs, doors, windows,
  structure and building services, and derives plans, sections, elevations,

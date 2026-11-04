@@ -29,8 +29,8 @@
 
     <Icon Id="ArchiForm.ico" SourceFile="assets\icons\app-icon.ico" />
     <Property Id="ARPPRODUCTICON" Value="ArchiForm.ico" />
-    <Property Id="ARPURLINFOABOUT" Value="https://github.com/grafikandesign-ship-it/constructcad" />
-    <Property Id="ARPHELPLINK" Value="https://github.com/grafikandesign-ship-it/constructcad/issues" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/grafikandesign-ship-it/ArchiForm" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/grafikandesign-ship-it/ArchiForm/issues" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="ArchiForm">

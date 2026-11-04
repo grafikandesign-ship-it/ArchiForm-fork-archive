@@ -1,6 +1,6 @@
 # ConstructCAD
 
-[![CI](https://github.com/francisreboucas/constructcad/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/francisreboucas/constructcad/actions/workflows/ci.yml)
+[![CI](https://github.com/grafikandesign-ship-it/ArchiForm/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/grafikandesign-ship-it/ArchiForm/actions/workflows/ci.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/licen%C3%A7a-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Rust 2024](https://img.shields.io/badge/rust-2024_edition-orange.svg?logo=rust)](https://www.rust-lang.org/)
 [![IFC4](https://img.shields.io/badge/IFC-exporta_IFC4_%C2%B7_importa_IFC2X3%2FIFC4-0a7bbb.svg)](https://technical.buildingsmart.org/standards/ifc/)
@@ -40,7 +40,7 @@ A casa de exemplo, construída por [`examples/showcase.ccmacro`](examples/showca
 
 ## Instalar
 
-Cada [versão publicada do ArchiForm](https://github.com/grafikandesign-ship-it/constructcad/releases) traz instaladores, arquivos compactados e um `SHA256SUMS.txt` para conferi-los:
+Cada [versão publicada do ArchiForm](https://github.com/grafikandesign-ship-it/ArchiForm/releases) traz instaladores, arquivos compactados e um `SHA256SUMS.txt` para conferi-los:
 
 | Sistema | Instalador | Arquivo compactado |
 |---|---|---|

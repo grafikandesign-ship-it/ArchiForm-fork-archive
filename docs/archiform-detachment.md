@@ -5,7 +5,7 @@ ArchiForm is now maintained as a fork with its own workflow. The original Constr
 ## Baseline
 
 - Upstream reference: `francisreboucas/constructcad`, `upstream/main` at `v0.9.1` (`14c9305`).
-- ArchiForm repository: `grafikandesign-ship-it/constructcad`.
+- ArchiForm repository: `grafikandesign-ship-it/ArchiForm`.
 - Development branch: `sketchdown/workflow-foundation`.
 - ArchiForm branch tip published before this plan: `60d201a`.
 - The fork `main` branch has been fast-forwarded to the upstream `v0.9.1` baseline.

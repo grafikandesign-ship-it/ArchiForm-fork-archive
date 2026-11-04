@@ -1,10 +1,10 @@
 # ArchiForm updates
 
-ArchiForm checks only the releases of `grafikandesign-ship-it/constructcad`. It never downloads an update until the user selects **Update Now**. The download and `SHA256SUMS.txt` must both come from that fork; the package is checked before installation. GitHub Actions must be enabled on the fork for the release workflow to run.
+ArchiForm checks only the releases of `grafikandesign-ship-it/ArchiForm`. It never downloads an update until the user selects **Update Now**. The download and `SHA256SUMS.txt` must both come from that fork; the package is checked before installation. GitHub Actions must be enabled on the fork for the release workflow to run.
 
 ## First installation on Windows
 
-The development executable in `target/debug` is not a release installation and cannot update itself. Install the first ArchiForm release from the fork's [Releases page](https://github.com/grafikandesign-ship-it/constructcad/releases), using either the Windows MSI or the portable ZIP. The MSI installs under `Program Files/ArchiForm` with its own Windows product identity. Keep project `.ccad` files outside the program folder.
+The development executable in `target/debug` is not a release installation and cannot update itself. Install the first ArchiForm release from the fork's [Releases page](https://github.com/grafikandesign-ship-it/ArchiForm/releases), using either the Windows MSI or the portable ZIP. The MSI installs under `Program Files/ArchiForm` with its own Windows product identity. Keep project `.ccad` files outside the program folder.
 
 From v0.8.3, new Windows ZIP installations start `ArchiForm.exe`. The v0.8.3 ZIP also carries a temporary `constructcad.exe` copy for the v0.8.2 portable updater, which looks for that filename. Existing v0.8.2 portable folders can be migrated by copying `ArchiForm.exe` from the verified ZIP into the same folder as `ccad.exe` and then removing the old executable after closing it. Project `.ccad` files require no conversion.
 

@@ -1,6 +1,6 @@
 # ConstructCAD
 
-[![CI](https://github.com/francisreboucas/constructcad/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/francisreboucas/constructcad/actions/workflows/ci.yml)
+[![CI](https://github.com/grafikandesign-ship-it/ArchiForm/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/grafikandesign-ship-it/ArchiForm/actions/workflows/ci.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Rust 2024](https://img.shields.io/badge/rust-2024_edition-orange.svg?logo=rust)](https://www.rust-lang.org/)
 [![IFC4](https://img.shields.io/badge/IFC-IFC4_export_%C2%B7_IFC2X3%2FIFC4_import-0a7bbb.svg)](https://technical.buildingsmart.org/standards/ifc/)
@@ -40,7 +40,7 @@ The showcase house, built by [`examples/showcase.ccmacro`](examples/showcase.ccm
 
 ## Installing
 
-Each [ArchiForm release](https://github.com/grafikandesign-ship-it/constructcad/releases) has installers, plain archives and a `SHA256SUMS.txt` to check them against:
+Each [ArchiForm release](https://github.com/grafikandesign-ship-it/ArchiForm/releases) has installers, plain archives and a `SHA256SUMS.txt` to check them against:
 
 | System | Installer | Archive |
 |---|---|---|
